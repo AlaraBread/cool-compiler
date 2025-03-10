@@ -61,9 +61,9 @@ data Expr = Expr !Int !ExprWithoutLine
 data ExprWithoutLine
   = Assign !Identifier !(Typed Expr)
   | DynamicDispatch {dynamicDispatchLhs :: !(Typed Expr), dynamicDispatchMethod :: !Identifier, dynamicDispachArgs :: ![Typed Expr]}
-  | StaticDispatch {staticDispatchLhs :: !Expr, dynamicDispatchType :: !Identifier, dynamicDispatchMethod :: !Identifier, dynamicDispatchArgs :: ![Typed Expr]}
+  | StaticDispatch {staticDispatchLhs :: !(Typed Expr), dynamicDispatchType :: !Identifier, dynamicDispatchMethod :: !Identifier, dynamicDispatchArgs :: ![Typed Expr]}
   | SelfDispatch {selfDispatchMethod :: !Identifier, selfDispatchArgs :: ![Typed Expr]}
-  | If {ifPredicate :: !Expr, trueBody :: !(Typed Expr), falseBody :: !(Typed Expr)}
+  | If {ifPredicate :: !(Typed Expr), trueBody :: !(Typed Expr), falseBody :: !(Typed Expr)}
   | While {whilePredicate :: !(Typed Expr), whileBody :: !(Typed Expr)}
   | Block ![Typed Expr]
   | New !Identifier
@@ -81,7 +81,7 @@ data ExprWithoutLine
   | StringConstant !String
   | Variable !Identifier
   | BooleanConstant !Bool
-  | Let ![LetBinding] !(Typed (Typed Expr))
+  | Let ![LetBinding] !(Typed Expr)
   | Case !(Typed Expr) ![CaseElement]
   deriving (Show)
 

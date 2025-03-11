@@ -81,20 +81,17 @@ generateTac
         (predicateTac, predicateV) <- generateTac ifPredicate
         (trueTac, trueV) <- generateTac trueBody
         (falseTac, falseV) <- generateTac falseBody
-        falseLabel <- getLabel
-        falseEndLabel <- getLabel
-        body <- getVariable
-        let falseTac = (TacLabel falseLabel : falseTac) ++ [Assign body falseV, TacLabel falseEndLabel]
         trueLabel <- getLabel
-        let trueTac = (TacLabel trueLabel : trueTac) ++ [Assign body trueV, Jump falseEndLabel]
+        trueEndLabel <- getLabel
+        bodyV <- getVariable
+        let trueTac = (TacLabel trueLabel : trueTac) ++ [Assign bodyV trueV, TacLabel trueEndLabel]
+        let falseTac = falseTac ++ [Assign bodyV falseV, Jump trueEndLabel]
         return
           ( predicateTac
-              ++ [ ConditionalJump predicateV trueLabel,
-                   Jump falseLabel
-                 ]
-              ++ trueTac
-              ++ falseTac,
-            body
+              ++ [ConditionalJump predicateV trueLabel]
+              ++ falseTac
+              ++ trueTac,
+            bodyV
           )
     InputIr.While
       { InputIr.whilePredicate,

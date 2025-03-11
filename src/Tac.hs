@@ -37,6 +37,12 @@ newtype Label = Label String
 
 newtype Temporary = Temporary Int
 
+getVariable :: State Temporary Variable
+getVariable = state $ \(Temporary i) -> (TemporaryV $ Temporary i + 1, Temporary i + 1)
+
+getLabel :: State Temporary Label
+getLabel = state $ \(Temporary i) -> (Label $ "l" ++ show (i + 1), Temporary i + 1)
+
 generateTac :: InputIr.Typed InputIr.Expr -> State Temporary (Tac, Variable)
 generateTac
   InputIr.Typed
@@ -51,7 +57,7 @@ generateTac
         do
           (tac, variable) <- generateTac exp
           let lhs = StringV lexeme
-          return (Assign lhs variable : tac, lhs)
+          return (tac : Assign lhs variable, lhs)
     InputIr.DynamicDispatch
       { InputIr.dynamicDispatchLhs = lhs,
         InputIr.dynamicDispatchMethod = method,
@@ -71,7 +77,25 @@ generateTac
       { InputIr.ifPredicate,
         InputIr.trueBody,
         InputIr.falseBody
-      } -> undefined
+      } -> do
+        (predicateTac, predicateV) <- generateTac ifPredicate
+        (trueTac, trueV) <- generateTac trueBody
+        (falseTac, falseV) <- generateTac falseBody
+        falseLabel <- getLabel
+        falseEndLabel <- getLabel
+        body <- getVariable
+        let falseTac = (TacLabel falseLabel : falseTac) ++ [Assign body falseV, TacLabel falseEndLabel]
+        trueLabel <- getLabel
+        let trueTac = (TacLabel trueLabel : trueTac) ++ [Assign body trueV, Jump falseEndLabel]
+        return
+          ( predicateTac
+              ++ [ ConditionalJump predicateV trueLabel,
+                   Jump falseLabel
+                 ]
+              ++ trueTac
+              ++ falseTac,
+            body
+          )
     InputIr.While
       { InputIr.whilePredicate,
         InputIr.whileBody

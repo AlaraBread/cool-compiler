@@ -57,7 +57,7 @@ generateTac
         do
           (tac, variable) <- generateTac exp
           let lhs = StringV lexeme
-          return (tac : Assign lhs variable, lhs)
+          return (tac ++ [Assign lhs variable], lhs)
     InputIr.DynamicDispatch
       { InputIr.dynamicDispatchLhs = lhs,
         InputIr.dynamicDispatchMethod = method,

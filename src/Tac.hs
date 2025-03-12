@@ -2,8 +2,6 @@ module Tac where
 
 import Control.Monad.State
 import Data.Int (Int32)
-import Data.Maybe (fromJust)
-import InputIr (LetBinding (LetBinding))
 import qualified InputIr
 
 type Tac = [TacStatement]

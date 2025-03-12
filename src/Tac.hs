@@ -139,6 +139,7 @@ generateTac
     InputIr.BooleanConstant b -> constant BoolConstant b
     InputIr.Variable InputIr.Identifier {InputIr.lexeme} -> pure ([], StringV lexeme)
     InputIr.Let bindings body -> do
+      -- we need to restore the old values of bindings after the let statement
       bindings <-
         traverse
           ( \InputIr.LetBinding
@@ -146,31 +147,31 @@ generateTac
                  InputIr.letBindingRhs = rhs,
                  InputIr.letBindingType' = InputIr.Identifier {InputIr.lexeme = type'}
                } ->
-                let v = StringV name
+                let bindingV = StringV name
                  in case rhs of
                       Just rhs -> do
                         (rhsTac, rhsV) <- generateTac rhs
                         tmp <- getVariable
                         pure
                           ( rhsTac
-                              ++ [ Assign v rhsV,
+                              ++ [ Assign bindingV rhsV,
                                    Assign tmp rhsV
                                  ],
-                            [Assign v tmp]
+                            [Assign bindingV tmp]
                           )
                       Nothing -> do
                         tmp <- getVariable
                         pure
-                          ( [ Default v (InputIr.Type type'),
+                          ( [ Default bindingV (InputIr.Type type'),
                               Default tmp (InputIr.Type type')
                             ],
-                            [Assign v tmp]
+                            [Assign bindingV tmp]
                           )
           )
           bindings
-      (bodyTac, bodyV) <- generateTac body
       let bindingInitTac = concatMap fst bindings
       let bindingResetTac = concatMap snd bindings
+      (bodyTac, bodyV) <- generateTac body
       pure (bindingInitTac ++ bodyTac ++ bindingResetTac, bodyV)
     InputIr.Case e elements -> undefined
 

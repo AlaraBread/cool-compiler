@@ -5,26 +5,27 @@ module InputIr where
 import Data.Int
 import qualified Data.Map.Strict as Map
 
-data InputIr = InputIr !ClassMap !ImplementationMap !ParentMap ![Class]
+data InputIr = InputIr !ClassMap !ImplementationMap !ParentMap !Ast
   deriving (Show)
 
 -- Represents a class. We make the choice to represent classes with/without a
 -- superclass with Maybe; we make similar choices throughout for optional
 -- features.
 
-type ClassMap = Map.Map Type [Typed Attribute]
-type ImplementationMap = Map.Map Type [Typed Method]
+type ClassMap = Map.Map Type [Attribute]
+
+type ImplementationMap = Map.Map Type [Method]
+
 -- Child to parent
 type ParentMap = Map.Map Type Type
+
 type Ast = [Class]
 
-data ImplementationMapEntry = ImplemntationMapEntry !Identifier ![Typed Method]
+data ImplementationMapEntry = ImplemntationMapEntry !Identifier ![Method]
   deriving (Show)
 
 -- Child then parent
 data ParentMapEntry = ParentMapEntry !Identifier !Identifier
-
-
 
 data Class = Class
   { className :: !Identifier,
@@ -35,18 +36,18 @@ data Class = Class
 
 -- Represents a feature of a class. Lifted directly from the documentation.
 data Feature
-  = AttributeF !(Typed Attribute)
-  | MethodF !(Typed Method)
+  = AttributeF !Attribute
+  | MethodF !Method
   deriving (Show)
 
-data Attribute = Attribute {attrName :: !Identifier, attrType :: !Identifier, attrRhs :: !(Maybe (Typed Expr))}
+data Attribute = Attribute {attrName :: !Identifier, attrType :: !Type, attrRhs :: !(Maybe (Typed Expr))}
   deriving (Show)
 
-data Method = Method {methodName :: !Identifier, methodFormals :: ![Formal], returnType :: !Identifier, methodBody :: !(Typed Expr)}
+data Method = Method {methodName :: !Identifier, methodFormals :: ![Formal], returnType :: !Type, methodBody :: !(Typed Expr)}
   deriving (Show)
 
 -- Represents a formal parameter. Lifted directly from the documentation.
-data Formal = Formal {formalName :: !Identifier, methodType :: !Identifier}
+data Formal = Formal {formalName :: !Identifier, formalType :: !Type}
   deriving (Show)
 
 -- Wraps an ExprWithoutLine with a line number. This way, we can treat line
@@ -96,6 +97,9 @@ data CaseElement = CaseElement {caseElementVariable :: !Identifier, caseElementT
 -- Type type.
 data Typed a = Typed {type' :: !Type, item :: !a}
   deriving (Show)
+
+instance Functor Typed where
+  fmap f (Typed type' item) = Typed type' $ f item
 
 newtype Type = Type String
   deriving (Eq, Ord, Show)

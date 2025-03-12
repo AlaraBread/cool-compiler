@@ -2,7 +2,7 @@ module Tac where
 
 import Control.Monad.State
 import Data.Int (Int32)
-import InputIr (ExprWithoutLine (Negate))
+import Data.Maybe (fromJust)
 import qualified InputIr
 
 type Tac = [TacStatement]
@@ -38,10 +38,10 @@ newtype Label = Label String
 newtype Temporary = Temporary Int
 
 getVariable :: State Temporary Variable
-getVariable = state $ \(Temporary i) -> (TemporaryV $ Temporary i + 1, Temporary i + 1)
+getVariable = state $ \(Temporary i) -> (TemporaryV $ Temporary $ i + 1, Temporary $ i + 1)
 
 getLabel :: State Temporary Label
-getLabel = state $ \(Temporary i) -> (Label $ "l" ++ show (i + 1), Temporary i + 1)
+getLabel = state $ \(Temporary i) -> (Label $ "l" ++ show (i + 1), Temporary $ i + 1)
 
 generateTac :: InputIr.Typed InputIr.Expr -> State Temporary (Tac, Variable)
 generateTac
@@ -96,22 +96,73 @@ generateTac
     InputIr.While
       { InputIr.whilePredicate,
         InputIr.whileBody
-      } -> undefined
-    InputIr.Block expressions -> undefined
-    InputIr.New identifier -> undefined
-    InputIr.IsVoid exp -> undefined
-    InputIr.Plus a b -> undefined
-    InputIr.Minus a b -> undefined
-    InputIr.Times a b -> undefined
-    InputIr.Divide a b -> undefined
-    InputIr.LessThan a b -> undefined
-    InputIr.LessThanOrEqualTo a b -> undefined
-    InputIr.Equal a b -> undefined
-    InputIr.Not e -> undefined
-    InputIr.Negate e -> undefined
-    InputIr.IntegerConstant i -> undefined
-    InputIr.StringConstant s -> undefined
-    InputIr.Variable identifier -> undefined
-    InputIr.BooleanConstant b -> undefined
+      } -> do
+        (predicateTac, predicateV) <- generateTac whilePredicate
+        (bodyTac, bodyV) <- generateTac whileBody
+        outV <- getVariable
+        whileStart <- getLabel
+        endLabel <- getLabel
+        notPredicateV <- getVariable
+        pure
+          ( [TacLabel whileStart]
+              ++ predicateTac
+              ++ [Not notPredicateV predicateV]
+              ++ [ConditionalJump notPredicateV endLabel]
+              ++ bodyTac
+              ++ [Jump whileStart]
+              ++ [TacLabel endLabel]
+              ++ [Default outV $ InputIr.Type "Object"],
+            outV
+          )
+    InputIr.Block expressions -> do
+      tacs <- traverse generateTac expressions
+      let (tac, v) =
+            foldl
+              (\(tac, _) (expTac, expVar) -> (tac ++ expTac, Just expVar))
+              ([], Nothing)
+              tacs
+      pure (tac, fromJust v) -- blocks cant be empty
+    InputIr.New InputIr.Identifier {InputIr.lexeme = typeName} -> do
+      t <- getVariable
+      pure ([New t $ InputIr.Type typeName], t)
+    InputIr.IsVoid exp -> unaryOperation exp IsVoid
+    InputIr.Plus a b -> binaryOperation a b Add
+    InputIr.Minus a b -> binaryOperation a b Subtract
+    InputIr.Times a b -> binaryOperation a b Multiply
+    InputIr.Divide a b -> binaryOperation a b Divide
+    InputIr.LessThan a b -> binaryOperation a b LessThan
+    InputIr.LessThanOrEqualTo a b -> binaryOperation a b LessThanOrEqualTo
+    InputIr.Equal a b -> binaryOperation a b Equals
+    InputIr.Not exp -> unaryOperation exp Not
+    InputIr.Negate exp -> unaryOperation exp Negate
+    InputIr.IntegerConstant i -> constant IntConstant i
+    InputIr.StringConstant s -> constant StringConstant s
+    InputIr.BooleanConstant b -> constant BoolConstant b
+    InputIr.Variable InputIr.Identifier {InputIr.lexeme} -> pure ([], StringV lexeme)
     InputIr.Let bindings body -> undefined
     InputIr.Case e elements -> undefined
+
+binaryOperation ::
+  InputIr.Typed InputIr.Expr ->
+  InputIr.Typed InputIr.Expr ->
+  (Variable -> Variable -> Variable -> TacStatement) ->
+  State Temporary (Tac, Variable)
+binaryOperation a b op = do
+  (aTac, aV) <- generateTac a
+  (bTac, bV) <- generateTac b
+  resultV <- getVariable
+  pure ([op resultV aV bV], resultV)
+
+unaryOperation ::
+  InputIr.Typed InputIr.Expr ->
+  (Variable -> Variable -> TacStatement) ->
+  State Temporary (Tac, Variable)
+unaryOperation exp op = do
+  (tac, v) <- generateTac exp
+  resultV <- getVariable
+  pure ([op resultV v], resultV)
+
+constant :: (a -> TacStatement) -> a -> State Temporary (Tac, Variable)
+constant statement c = do
+  resultV <- getVariable
+  pure ([statement c], resultV)

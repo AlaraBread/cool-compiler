@@ -5,3 +5,7 @@ tmp/
 build/
 src/main
 .direnv/
+
+*.cl-tac
+*.cl-ast
+*.cl-type

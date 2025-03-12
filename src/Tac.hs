@@ -3,6 +3,7 @@ module Tac where
 import Control.Monad.State
 import Data.Int (Int32)
 import Data.Maybe (fromJust)
+import InputIr (LetBinding (LetBinding))
 import qualified InputIr
 
 type Tac = [TacStatement]
@@ -115,13 +116,11 @@ generateTac
             outV
           )
     InputIr.Block expressions -> do
-      tacs <- traverse generateTac expressions
-      let (tac, v) =
-            foldl
-              (\(tac, _) (expTac, expVar) -> (tac ++ expTac, Just expVar))
-              ([], Nothing)
-              tacs
-      pure (tac, fromJust v) -- blocks cant be empty
+      expressions <- traverse generateTac expressions
+      pure
+        ( concatMap fst expressions,
+          snd $ last expressions -- this will crash on an empty block
+        )
     InputIr.New InputIr.Identifier {InputIr.lexeme = typeName} -> do
       t <- getVariable
       pure ([New t $ InputIr.Type typeName], t)
@@ -139,7 +138,40 @@ generateTac
     InputIr.StringConstant s -> constant StringConstant s
     InputIr.BooleanConstant b -> constant BoolConstant b
     InputIr.Variable InputIr.Identifier {InputIr.lexeme} -> pure ([], StringV lexeme)
-    InputIr.Let bindings body -> undefined
+    InputIr.Let bindings body -> do
+      bindings <-
+        traverse
+          ( \InputIr.LetBinding
+               { InputIr.letBindingName = InputIr.Identifier {InputIr.lexeme = name},
+                 InputIr.letBindingRhs = rhs,
+                 InputIr.letBindingType' = InputIr.Identifier {InputIr.lexeme = type'}
+               } ->
+                let v = StringV name
+                 in case rhs of
+                      Just rhs -> do
+                        (rhsTac, rhsV) <- generateTac rhs
+                        tmp <- getVariable
+                        pure
+                          ( rhsTac
+                              ++ [ Assign v rhsV,
+                                   Assign tmp rhsV
+                                 ],
+                            [Assign v tmp]
+                          )
+                      Nothing -> do
+                        tmp <- getVariable
+                        pure
+                          ( [ Default v (InputIr.Type type'),
+                              Default tmp (InputIr.Type type')
+                            ],
+                            [Assign v tmp]
+                          )
+          )
+          bindings
+      (bodyTac, bodyV) <- generateTac body
+      let bindingInitTac = concatMap fst bindings
+      let bindingResetTac = concatMap snd bindings
+      pure (bindingInitTac ++ bodyTac ++ bindingResetTac, bodyV)
     InputIr.Case e elements -> undefined
 
 binaryOperation ::

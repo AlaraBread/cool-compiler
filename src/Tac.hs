@@ -43,6 +43,9 @@ data TacStatement
   | Comment String
   | ConditionalJump Variable Label
   | Assign Variable Variable
+  | Case (Tac, Variable) [CaseElement]
+
+data CaseElement = CaseElement Variable InputIr.Type (Tac, Variable)
 
 instance Show TacStatement where
   show :: TacStatement -> String
@@ -75,6 +78,7 @@ instance Show TacStatement where
     Comment msg -> "comment " ++ msg
     ConditionalJump a l -> "bt " ++ show a ++ " " ++ show l
     Assign a b -> show a ++ " <- " ++ show b
+    Case e elements -> "case :3" -- dont bother outputting case statements for now
 
 showBinary :: Variable -> Variable -> Variable -> String -> String
 showBinary a b c op = show a ++ " <- " ++ op ++ show b ++ show c
@@ -288,7 +292,20 @@ generateTacExpr
       let bindingResetTac = concatMap snd bindings
       (bodyTac, bodyV) <- generateTacExpr body
       pure (bindingInitTac ++ bodyTac ++ bindingResetTac, bodyV)
-    InputIr.Case e elements -> undefined
+    InputIr.Case e elements -> do
+      (eTac, eV) <- generateTacExpr e
+      a <-
+        mapM
+          ( \InputIr.CaseElement
+               { InputIr.caseElementVariable,
+                 InputIr.caseElementType,
+                 InputIr.caseElementBody
+               } -> do
+                body <- generateTacExpr caseElementBody
+                pure $ CaseElement (StringV $ InputIr.lexeme caseElementVariable) (InputIr.Type $ InputIr.lexeme caseElementType) body
+          )
+          elements
+      pure (eTac, eV)
 
 binaryOperation ::
   InputIr.Typed InputIr.Expr ->

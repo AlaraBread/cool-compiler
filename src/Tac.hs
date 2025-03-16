@@ -78,7 +78,7 @@ instance Show TacStatement where
     Comment msg -> "comment " ++ msg
     ConditionalJump a l -> "bt " ++ show a ++ " " ++ show l
     Assign a b -> show a ++ " <- " ++ show b
-    Case e elements -> "case :3" -- dont bother outputting case statements for now
+    Case e elements -> "comment case :3" -- dont bother outputting case statements for now
 
 showBinary :: Variable -> Variable -> Variable -> String -> String
 showBinary a b c op = show a ++ " <- " ++ op ++ show b ++ show c

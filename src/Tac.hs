@@ -81,10 +81,10 @@ instance Show TacStatement where
     Case e elements -> "comment case :3" -- dont bother outputting case statements for now
 
 showBinary :: Variable -> Variable -> Variable -> String -> String
-showBinary a b c op = show a ++ " <- " ++ op ++ show b ++ show c
+showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c
 
 showUnary :: Variable -> Variable -> String -> String
-showUnary a b op = show a ++ " <- " ++ op ++ show b
+showUnary a b op = show a ++ " <- " ++ op ++ " " ++ show b
 
 data Variable = StringV String | TemporaryV Temporary
 

@@ -326,7 +326,7 @@ binaryOperation a b op = do
   (aTac, aV) <- generateTacExpr a
   (bTac, bV) <- generateTacExpr b
   resultV <- getVariable
-  pure ([op resultV aV bV], resultV)
+  pure (aTac ++ bTac ++ [op resultV aV bV], resultV)
 
 unaryOperation ::
   InputIr.Typed InputIr.Expr ->
@@ -335,7 +335,7 @@ unaryOperation ::
 unaryOperation exp op = do
   (tac, v) <- generateTacExpr exp
   resultV <- getVariable
-  pure ([op resultV v], resultV)
+  pure (tac ++ [op resultV v], resultV)
 
 constant :: (Variable -> a -> TacStatement) -> a -> State Temporary (Tac, Variable)
 constant statement c = do
@@ -344,7 +344,6 @@ constant statement c = do
 
 generateTacMethod :: InputIr.Method -> State Temporary TacMethod
 generateTacMethod (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
-  -- NOTE: this is a hack, we would want to preserve this information in a more elegant way
   (tac, v) <- generateTacExpr methodBody
   pure TacMethod {methodName = InputIr.lexeme methodName, body = tac, formals = methodFormals, returnVariable = v}
 

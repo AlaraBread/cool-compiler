@@ -35,7 +35,7 @@ data TacStatement
   | IsVoid Variable Variable
   | Dispatch
       { dispatchResult :: Variable,
-        dispatchReciever :: Variable,
+        dispatchReceiver :: Variable,
         dispatchType :: Maybe InputIr.Type,
         dispatchMethod :: String,
         dispatchArgs :: [Variable]
@@ -69,7 +69,7 @@ instance Show TacStatement where
     IsVoid a b -> showUnary a b "isvoid"
     Dispatch
       { dispatchResult,
-        dispatchReciever,
+        dispatchReceiver,
         dispatchType,
         dispatchMethod,
         dispatchArgs
@@ -126,7 +126,7 @@ generateTacExpr
           let lhs = StringV lexeme
           return (tac ++ [Assign lhs variable], lhs)
     InputIr.DynamicDispatch
-      { InputIr.dynamicDispatchLhs = reciever,
+      { InputIr.dynamicDispatchLhs = receiver,
         InputIr.dynamicDispatchMethod = method,
         InputIr.dynamicDispachArgs = args
       } -> do
@@ -134,14 +134,14 @@ generateTacExpr
         dispatchArgs' <- mapM generateTacExpr args
         let dispatchArgsTac = concatMap fst dispatchArgs'
         let dispatchArgsV = map snd dispatchArgs'
-        (recieverTac, recieverV) <- generateTacExpr reciever
+        (receiverTac, receiverV) <- generateTacExpr receiver
         pure
           ( dispatchArgsTac
-              ++ recieverTac
+              ++ receiverTac
               ++ [ Dispatch
                      { dispatchResult = temp,
                        dispatchMethod = InputIr.lexeme method,
-                       dispatchReciever = recieverV,
+                       dispatchReceiver = receiverV,
                        dispatchType = Nothing,
                        dispatchArgs = dispatchArgsV
                      }
@@ -149,7 +149,7 @@ generateTacExpr
             temp
           )
     InputIr.StaticDispatch
-      { InputIr.staticDispatchLhs = reciever,
+      { InputIr.staticDispatchLhs = receiver,
         InputIr.dynamicDispatchType = type',
         InputIr.dynamicDispatchMethod = method,
         InputIr.dynamicDispatchArgs = args
@@ -158,14 +158,14 @@ generateTacExpr
         dispatchArgs' <- mapM generateTacExpr args
         let dispatchArgsTac = concatMap fst dispatchArgs'
         let dispatchArgsV = map snd dispatchArgs'
-        (recieverTac, recieverV) <- generateTacExpr reciever
+        (receiverTac, receiverV) <- generateTacExpr receiver
         pure
           ( dispatchArgsTac
-              ++ recieverTac
+              ++ receiverTac
               ++ [ Dispatch
                      { dispatchResult = temp,
                        dispatchMethod = InputIr.lexeme method,
-                       dispatchReciever = recieverV,
+                       dispatchReceiver = receiverV,
                        dispatchType = Just $ InputIr.Type $ InputIr.lexeme type',
                        dispatchArgs = dispatchArgsV
                      }
@@ -185,7 +185,7 @@ generateTacExpr
               ++ [ Dispatch
                      { dispatchResult = temp,
                        dispatchMethod = InputIr.lexeme selfDispatchMethod,
-                       dispatchReciever = StringV "self",
+                       dispatchReceiver = StringV "self",
                        dispatchType = Nothing,
                        dispatchArgs = dispatchArgsV
                      }

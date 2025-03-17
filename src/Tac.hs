@@ -8,7 +8,6 @@ import Data.Int (Int32)
 import qualified Data.Map.Strict as Map
 import Distribution.Simple.Utils (intercalate, lowercase)
 import qualified InputIr
-import Debug.Trace (traceM)
 
 data TacIr = TacIr {implementationMap :: Map.Map InputIr.Type [TacMethod], constructorMap :: Map.Map InputIr.Type Tac}
   deriving (Show)
@@ -345,7 +344,7 @@ constant statement c = do
 generateTacMethod :: InputIr.Method -> State Temporary TacMethod
 generateTacMethod (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
   (tac, v) <- generateTacExpr methodBody
-  pure TacMethod {methodName = InputIr.lexeme methodName, body = tac, formals = methodFormals, returnVariable = v}
+  pure TacMethod {methodName = InputIr.lexeme methodName, body = tac ++ [Return v], formals = methodFormals, returnVariable = v}
 
 generateTacConstructor :: [InputIr.Attribute] -> State Temporary Tac
 generateTacConstructor attrs = do

@@ -4,6 +4,8 @@
 tmp/
 build/
 src/main
+*.o
+*.hi
 .direnv/
 
 *.cl-tac

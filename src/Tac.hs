@@ -6,7 +6,7 @@ module Tac where
 import Control.Monad.State
 import Data.Int (Int32)
 import qualified Data.Map.Strict as Map
-import Distribution.Simple.Utils (intercalate, lowercase)
+import Distribution.Simple.Utils (lowercase)
 import qualified InputIr
 
 data TacIr = TacIr {implementationMap :: Map.Map InputIr.Type [TacMethod], constructorMap :: Map.Map InputIr.Type Tac}
@@ -102,7 +102,7 @@ instance Show Label where
 newtype Temporary = Temporary Int
   deriving (Show)
 
-showTac tac = intercalate "\n" (map show tac)
+showTac tac = unlines (map show tac)
 
 getVariable :: State Temporary Variable
 getVariable = state $ \(Temporary i) -> (TemporaryV $ Temporary $ i + 1, Temporary $ i + 1)

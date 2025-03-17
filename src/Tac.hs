@@ -341,10 +341,16 @@ constant statement c = do
   resultV <- getVariable
   pure ([statement resultV c], resultV)
 
-generateTacMethod :: InputIr.Method -> State Temporary TacMethod
-generateTacMethod (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
+generateTacMethod :: InputIr.Type -> InputIr.Method -> State Temporary TacMethod
+generateTacMethod (InputIr.Type typeName) (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
   (tac, v) <- generateTacExpr methodBody
-  pure TacMethod {methodName = InputIr.lexeme methodName, body = tac ++ [Return v], formals = methodFormals, returnVariable = v}
+  pure
+    TacMethod
+      { methodName = InputIr.lexeme methodName,
+        body = TacLabel (Label $ typeName ++ "_" ++ InputIr.lexeme methodName) : tac ++ [Return v],
+        formals = methodFormals,
+        returnVariable = v
+      }
 
 generateTacConstructor :: [InputIr.Attribute] -> State Temporary Tac
 generateTacConstructor attrs = do
@@ -367,7 +373,7 @@ generateTac :: InputIr.InputIr -> TacIr
 generateTac (InputIr.InputIr classMap implMap parentMap ast) =
   evalState
     ( do
-        implMap' <- mapM (mapM generateTacMethod) $ Map.map (map snd) implMap
+        implMap' <- sequence $ Map.mapWithKey (mapM . generateTacMethod) $ Map.map (map snd) implMap
         constructorMap <- mapM generateTacConstructor classMap
         pure TacIr {implementationMap = implMap', constructorMap = constructorMap}
     )

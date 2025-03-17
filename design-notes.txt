@@ -1,0 +1,121 @@
+1 3AC todos
+===========
+
+  - figure out wtf we are doing with case
+  - add line numbers
+  - emit specific options for built-ins
+
+
+2 How we do case
+================
+
+  Put a lookup table in rodata which tells us if a certain type is a
+  child of another type. This makes each check in the case O(1). We do
+  have to reorder case statements to start from the most-specific ones.
+  This is literally just toposort; copy and paste it again.
+
+
+3 IRs
+=====
+
+3.1 two address code
+~~~~~~~~~~~~~~~~~~~~
+
+  two address code is closer to x86 which is good
+
+  probably pretty easy to translate from
+
+  lets us do register allocation pretty much how x86 has it
+
+  division will make us cry
+
+
+3.2 two address code with register allocation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  things to be careful of: division
+
+
+3.3 x86-64?
+~~~~~~~~~~~
+
+
+4 object layout
+===============
+
+4.1 per-class
+~~~~~~~~~~~~~
+
+   vtable     
+  ------------
+   &type_name 
+   &type_id   
+   &method1   
+   ...        
+   &methodn   
+
+  type_id is a sequentially increasing number for each class. probably
+  0-n lexographically
+
+
+4.2 per-object
+~~~~~~~~~~~~~~
+
+   object        
+  ---------------
+   ptr to vtable 
+   &attribute1   
+   &attribute2   
+
+
+5 activation records
+====================
+
+   ar                 
+  --------------------
+   caller’s           
+  --------------------
+   ptr to previous ar 
+   return address     
+   parameters6        
+   ...                
+   parameters7        
+   frame pointer      
+  --------------------
+   callee’s           
+  --------------------
+   saved registers    
+   locals             
+   temporaries        
+
+
+5.1 function parameters
+~~~~~~~~~~~~~~~~~~~~~~~
+
+  passed in rdi, rsi, rcx, r8, r9, then the stack
+
+  note: we keep a pointer to self as the first parameter
+
+
+5.2 caller-saved registers
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  rbx, rsp, rbp, r12, r13, r14, and r15
+
+
+5.3 callee-saved registers
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  everything else lol
+
+
+5.4 return value
+~~~~~~~~~~~~~~~~
+
+  in rax
+
+
+6 general asm notes
+===================
+
+  always just store stuff in memory

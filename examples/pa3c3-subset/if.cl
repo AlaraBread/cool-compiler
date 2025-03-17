@@ -1,6 +1,6 @@
 class Main inherits IO {
     main(): Object { {
-        if 2 < 3 then out_string("math :>\n") else out_string("math :<\n") fi;
-        if 3 < 2 then out_string("math :<\n") else out_string("math :>\n") fi;
+        if true then out_string("yay! :>\n") else out_string("uh oh :<\n") fi;
+        if false then out_string("uh oh :<\n") else out_string("yay! :>\n") fi;
     }};
 };

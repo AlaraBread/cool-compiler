@@ -7,14 +7,14 @@ for file in $dir/*.cl
 
     echo $base
 
-    ../cool --tac "$dir/$base.cl"
-    ../cool "$dir/$base.cl-tac" > out-reference.txt
+    cool --tac "$dir/$base.cl"
+    cool "$dir/$base.cl-tac" > out-reference.txt
 
     rm "$dir/$base.cl-tac"
 
-    ../cool --type "$dir/$base.cl"
+    cool --type "$dir/$base.cl"
     src/main "$dir/$base.cl-type"
-    ../cool "$dir/$base.cl-tac" > out-ours.txt
+    cool "$dir/$base.cl-tac" > out-ours.txt
 
     rm $dir/$base.cl-*
 

@@ -9,7 +9,7 @@ import qualified InputIr
 data TacIr = TacIr {implementationMap :: Map.Map InputIr.Type [TacMethod], constructorMap :: Map.Map InputIr.Type Tac}
   deriving (Show)
 
-data TacMethod = TacMethod {body :: Tac, formals :: [InputIr.Formal], returnVariable :: Variable}
+data TacMethod = TacMethod {methodName :: String, body :: Tac, formals :: [InputIr.Formal], returnVariable :: Variable}
   deriving (Show)
 
 type Tac = [TacStatement]
@@ -306,6 +306,16 @@ generateTacExpr
           )
           elements
       pure (eTac, eV)
+    InputIr.IOInInt -> ([Comment "IO.in_int"],) <$> getVariable
+    InputIr.IOInString -> ([Comment "IO.in_string"],) <$> getVariable
+    InputIr.IOOutInt -> ([Comment "IO.out_int"],) <$> getVariable
+    InputIr.IOOutString -> ([Comment "IO.out_string"],) <$> getVariable
+    InputIr.ObjectAbort -> ([Comment "Object.abort"],) <$> getVariable
+    InputIr.ObjectCopy -> ([Comment "Object.copy"],) <$> getVariable
+    InputIr.ObjectTypeName -> ([Comment "Object.type_name"],) <$> getVariable
+    InputIr.StringConcat -> ([Comment "String.concat"],) <$> getVariable
+    InputIr.StringLength -> ([Comment "String.length"],) <$> getVariable
+    InputIr.StringSubstr -> ([Comment "String.substr"],) <$> getVariable
 
 binaryOperation ::
   InputIr.Typed InputIr.Expr ->
@@ -333,9 +343,10 @@ constant statement c = do
   pure ([statement resultV c], resultV)
 
 generateTacMethod :: InputIr.Method -> State Temporary TacMethod
-generateTacMethod (InputIr.Method {InputIr.methodFormals, InputIr.methodBody}) = do
+generateTacMethod (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
+  -- NOTE: this is a hack, we would want to preserve this information in a more elegant way
   (tac, v) <- generateTacExpr methodBody
-  pure TacMethod {body = tac, formals = methodFormals, returnVariable = v}
+  pure TacMethod {methodName = InputIr.lexeme methodName, body = tac, formals = methodFormals, returnVariable = v}
 
 generateTacConstructor :: [InputIr.Attribute] -> State Temporary Tac
 generateTacConstructor attrs = do
@@ -358,7 +369,7 @@ generateTac :: InputIr.InputIr -> TacIr
 generateTac (InputIr.InputIr classMap implMap parentMap ast) =
   evalState
     ( do
-        implMap' <- mapM (mapM generateTacMethod) implMap
+        implMap' <- mapM (mapM generateTacMethod) $ Map.map (map snd) implMap
         constructorMap <- mapM generateTacConstructor classMap
         pure TacIr {implementationMap = implMap', constructorMap = constructorMap}
     )

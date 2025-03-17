@@ -48,10 +48,10 @@ parseImplementationMap :: Parser ImplementationMap
 parseImplementationMap =
   parseLine >> Map.fromList <$> parseList parseImplementationMapEntry
 
-parseImplementationMapEntry :: Parser (Type, [Method])
+parseImplementationMapEntry :: Parser (Type, [(Type, Method)])
 parseImplementationMapEntry = do
   class' <- parseType
-  methods <- parseList parseMethod
+  methods <- parseList parseImplementationMapMethod
   pure (class', methods)
 
 parseAst :: Parser Ast
@@ -84,10 +84,28 @@ parseAttribute initialized =
     else Attribute <$> parseIdentifier <*> parseType <*> pure Nothing
 
 parseMethod :: Parser Method
-parseMethod = Method <$> parseIdentifier <*> parseList parseFormal <*> parseType <*> parseExpr
+parseMethod = Method <$> parseIdentifier <*> parseList (parseFormal True) <*> parseExpr
 
-parseFormal :: Parser Formal
-parseFormal = Formal <$> parseIdentifier <*> parseType
+parseImplementationMapMethod :: Parser (Type, Method)
+parseImplementationMapMethod = do
+  -- I spent like 5 hours debugging this being a parseIdentifier. I need a hug.
+  -- Or a better programming language. Or a lack of a skill issue.
+  name <- Identifier 0 <$> parseLine
+  formals <- parseList (parseFormal False)
+  implementer <- parseType
+
+  m <- Method name formals <$> parseExpr
+
+  pure (implementer, m)
+
+parseFormal :: Bool -> Parser Formal
+parseFormal typed = do
+  name <- Identifier 0 <$> parseLine
+  type' <-
+    if typed
+      then Just <$> parseType
+      else pure Nothing
+  pure $ Formal name type'
 
 -- You would think this is the scary one, but no.
 parseExpr :: Parser (Typed Expr)
@@ -102,8 +120,10 @@ parseExpr = do
 -- makes this much nicer than it could have been.
 parseExprWithoutLine :: Parser (Typed ExprWithoutLine)
 parseExprWithoutLine = do
+  type' <- parseType
   exprType <- parseLine
-  parseTyped $ case exprType of
+
+  expr <- case exprType of
     "assign" -> Assign <$> parseIdentifier <*> parseExpr
     "dynamic_dispatch" -> DynamicDispatch <$> parseExpr <*> parseIdentifier <*> parseList parseExpr
     "static_dispatch" -> StaticDispatch <$> parseExpr <*> parseIdentifier <*> parseIdentifier <*> parseList parseExpr
@@ -129,6 +149,21 @@ parseExprWithoutLine = do
     "false" -> pure $ BooleanConstant False
     "let" -> Let <$> parseList parseLetBinding <*> parseExpr
     "case" -> Case <$> parseExpr <*> parseList parseCaseElement
+    "internal" -> do
+      kind <- parseLine
+      pure $ case kind of
+        "IO.in_int" -> IOInInt
+        "IO.in_string" -> IOInString
+        "IO.out_int" -> IOOutInt
+        "IO.out_string" -> IOOutString
+        "Object.abort" -> ObjectAbort
+        "Object.copy" -> ObjectCopy
+        "Object.type_name" -> ObjectTypeName
+        "String.concat" -> StringConcat
+        "String.length" -> StringLength
+        "String.substr" -> StringSubstr
+
+  pure $ Typed type' expr
 
 -- Parses a single let binding.
 parseLetBinding :: Parser LetBinding

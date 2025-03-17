@@ -14,14 +14,15 @@ data InputIr = InputIr !ClassMap !ImplementationMap !ParentMap !Ast
 
 type ClassMap = Map.Map Type [Attribute]
 
-type ImplementationMap = Map.Map Type [Method]
+-- The Type in the right hand side is the place where the method is implemented
+type ImplementationMap = Map.Map Type [(Type, Method)]
 
 -- Child to parent
 type ParentMap = Map.Map Type Type
 
 type Ast = [Class]
 
-data ImplementationMapEntry = ImplemntationMapEntry !Identifier ![Method]
+data ImplementationMapEntry = ImplementationMapEntry !Identifier ![Method]
   deriving (Show)
 
 -- Child then parent
@@ -43,16 +44,18 @@ data Feature
 data Attribute = Attribute {attrName :: !Identifier, attrType :: !Type, attrRhs :: !(Maybe (Typed Expr))}
   deriving (Show)
 
-data Method = Method {methodName :: !Identifier, methodFormals :: ![Formal], returnType :: !Type, methodBody :: !(Typed Expr)}
+data Method = Method {methodName :: !Identifier, methodFormals :: ![Formal], methodBody :: !(Typed Expr)}
   deriving (Show)
 
--- Represents a formal parameter. Lifted directly from the documentation.
-data Formal = Formal {formalName :: !Identifier, formalType :: !Type}
+-- Represents a formal parameter. Lifted directly from the documentation. Note
+-- that in the implementation map, Formals do not have a type. For some reason.
+data Formal = Formal {formalName :: !Identifier, formalType :: !(Maybe Type)}
   deriving (Show)
 
 -- Wraps an ExprWithoutLine with a line number. This way, we can treat line
 -- numbers uniformly among all expression types (and avoid repetition).
-data Expr = Expr !Int !ExprWithoutLine
+data Expr
+  = Expr !Int !ExprWithoutLine
   deriving (Show)
 
 -- We pretty directly match the documentation on expressions, in form (though
@@ -84,6 +87,17 @@ data ExprWithoutLine
   | BooleanConstant !Bool
   | Let ![LetBinding] !(Typed Expr)
   | Case !(Typed Expr) ![CaseElement]
+  | -- internal expressions
+    IOInInt
+  | IOInString
+  | IOOutInt
+  | IOOutString
+  | ObjectAbort
+  | ObjectCopy
+  | ObjectTypeName
+  | StringConcat
+  | StringLength
+  | StringSubstr
   deriving (Show)
 
 -- Represents a binding in a let binding.

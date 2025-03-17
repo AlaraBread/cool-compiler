@@ -16,7 +16,7 @@ for file in $dir/*.cl
     src/main "$dir/$base.cl-type"
     ../cool "$dir/$base.cl-tac" > out-ours.txt
 
-    rm "$dir/$base.cl-*"
+    rm $dir/$base.cl-*
 
     diff out-reference.txt out-ours.txt
     rm out-reference.txt out-ours.txt

@@ -8,6 +8,7 @@ import Data.Int (Int32)
 import qualified Data.Map.Strict as Map
 import Distribution.Simple.Utils (intercalate, lowercase)
 import qualified InputIr
+import Debug.Trace (traceM)
 
 data TacIr = TacIr {implementationMap :: Map.Map InputIr.Type [TacMethod], constructorMap :: Map.Map InputIr.Type Tac}
   deriving (Show)
@@ -203,13 +204,13 @@ generateTacExpr
         trueLabel <- getLabel
         trueEndLabel <- getLabel
         bodyV <- getVariable
-        let trueTac = (TacLabel trueLabel : trueTac) ++ [Assign bodyV trueV, TacLabel trueEndLabel]
-        let falseTac = falseTac ++ [Assign bodyV falseV, Jump trueEndLabel]
+        let trueTac' = (TacLabel trueLabel : trueTac) ++ [Assign bodyV trueV, TacLabel trueEndLabel]
+        let falseTac' = falseTac ++ [Assign bodyV falseV, Jump trueEndLabel]
         return
           ( predicateTac
               ++ [ConditionalJump predicateV trueLabel]
-              ++ falseTac
-              ++ trueTac,
+              ++ falseTac'
+              ++ trueTac',
             bodyV
           )
     InputIr.While

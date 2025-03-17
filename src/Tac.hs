@@ -1,3 +1,6 @@
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TupleSections #-}
+
 module Tac where
 
 import Control.Monad.State
@@ -48,7 +51,6 @@ data TacStatement
 data CaseElement = CaseElement Variable InputIr.Type (Tac, Variable)
 
 instance Show TacStatement where
-  show :: TacStatement -> String
   show t = case t of
     Add a b c -> showBinary a b c "+"
     Subtract a b c -> showBinary a b c "-"
@@ -89,20 +91,17 @@ showUnary a b op = show a ++ " <- " ++ op ++ " " ++ show b
 data Variable = StringV String | TemporaryV Temporary
 
 instance Show Variable where
-  show :: Variable -> String
   show (StringV s) = s
   show (TemporaryV (Temporary t)) = "temp" ++ show t
 
 newtype Label = Label String
 
 instance Show Label where
-  show :: Label -> String
   show (Label l) = l
 
 newtype Temporary = Temporary Int
   deriving (Show)
 
-showTac :: Tac -> String
 showTac tac = intercalate "\n" (map show tac)
 
 getVariable :: State Temporary Variable

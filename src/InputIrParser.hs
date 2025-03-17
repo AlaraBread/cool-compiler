@@ -190,9 +190,6 @@ parseList p = parseInt >>= (sequenceA <$> flip replicate p)
 parseInt :: Parser Int
 parseInt = read <$> parseLine
 
-parseTyped :: Parser a -> Parser (Typed a)
-parseTyped = liftA2 Typed parseType
-
 parseType :: Parser Type
 parseType = Type <$> parseLine
 

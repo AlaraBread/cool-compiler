@@ -4,6 +4,7 @@ module InputIr where
 
 import Data.Int
 import qualified Data.Map.Strict as Map
+import Util
 
 data InputIr = InputIr !ClassMap !ImplementationMap !ParentMap !Ast
   deriving (Show)
@@ -54,9 +55,7 @@ data Formal = Formal {formalName :: !Identifier, formalType :: !(Maybe Type)}
 
 -- Wraps an ExprWithoutLine with a line number. This way, we can treat line
 -- numbers uniformly among all expression types (and avoid repetition).
-data Expr
-  = Expr !Int !ExprWithoutLine
-  deriving (Show)
+type Expr = Lined ExprWithoutLine
 
 -- We pretty directly match the documentation on expressions, in form (though
 -- not necessarily in field names). For brevity, we do not use records for

@@ -2,7 +2,6 @@
 ===========
 
   - figure out wtf we are doing with case
-  - add line numbers
   - emit specific options for built-ins
 
 

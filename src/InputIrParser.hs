@@ -5,6 +5,7 @@ import Control.Monad.State
 import Data.Int
 import qualified Data.Map.Strict as Map
 import InputIr
+import Util
 
 -- Our top level parse function. This is the only thing we have to export;
 -- everything else is an implementation detail.
@@ -112,7 +113,7 @@ parseExpr :: Parser (Typed Expr)
 parseExpr = do
   line' <- parseInt
   e <- parseExprWithoutLine
-  pure $ Expr line' <$> e
+  pure $ Lined line' <$> e
 
 -- This is the scary one. Realistically, it is not too bad, just a tad tedious.
 -- You could do something more clever here, especially around binary operators,

@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TupleSections #-}
 
-module Tac where
+module Trac where
 
 import Control.Monad.State
 import Data.Int (Int32)
@@ -10,15 +10,15 @@ import Distribution.Simple.Utils (lowercase)
 import qualified InputIr
 import Util
 
-data TacIr = TacIr {implementationMap :: Map.Map InputIr.Type [TacMethod], constructorMap :: Map.Map InputIr.Type Tac}
+data TracIr = TracIr {implementationMap :: Map.Map InputIr.Type [TracMethod], constructorMap :: Map.Map InputIr.Type Trac}
   deriving (Show)
 
-data TacMethod = TacMethod {methodName :: String, body :: Tac, formals :: [InputIr.Formal], returnVariable :: Variable}
+data TracMethod = TracMethod {methodName :: String, body :: Trac, formals :: [InputIr.Formal], returnVariable :: Variable}
   deriving (Show)
 
-type Tac = [Lined TacStatement]
+type Trac = [Lined TracStatement]
 
-data TacStatement
+data TracStatement
   = Add Variable Variable Variable
   | Subtract Variable Variable Variable
   | Multiply Variable Variable Variable
@@ -42,16 +42,16 @@ data TacStatement
         dispatchArgs :: [Variable]
       }
   | Jump Label
-  | TacLabel Label
+  | TracLabel Label
   | Return Variable
   | Comment String
   | ConditionalJump Variable Label
   | Assign Variable Variable
-  | Case (Tac, Variable) [CaseElement]
+  | Case (Trac, Variable) [CaseElement]
 
-data CaseElement = CaseElement Variable InputIr.Type (Tac, Variable)
+data CaseElement = CaseElement Variable InputIr.Type (Trac, Variable)
 
-instance Show TacStatement where
+instance Show TracStatement where
   show t = case t of
     Add a b c -> showBinary a b c "+"
     Subtract a b c -> showBinary a b c "-"
@@ -76,7 +76,7 @@ instance Show TacStatement where
         dispatchArgs
       } -> show dispatchResult ++ " <- call " ++ dispatchMethod ++ " " ++ unwords (map show dispatchArgs)
     Jump l -> "jmp " ++ show l
-    TacLabel l -> "label " ++ show l
+    TracLabel l -> "label " ++ show l
     Return a -> "return " ++ show a
     Comment msg -> "comment " ++ msg
     ConditionalJump a l -> "bt " ++ show a ++ " " ++ show l
@@ -103,7 +103,7 @@ instance Show Label where
 newtype Temporary = Temporary Int
   deriving (Show)
 
-showTac tac = unlines (map show tac)
+showTrac trac = unlines (map show trac)
 
 getVariable :: State Temporary Variable
 getVariable = state $ \(Temporary i) -> (TemporaryV $ Temporary $ i + 1, Temporary $ i + 1)
@@ -111,27 +111,26 @@ getVariable = state $ \(Temporary i) -> (TemporaryV $ Temporary $ i + 1, Tempora
 getLabel :: State Temporary Label
 getLabel = state $ \(Temporary i) -> (Label $ "l" ++ show (i + 1), Temporary $ i + 1)
 
-generateTacExpr :: InputIr.Typed InputIr.Expr -> State Temporary (Tac, Variable)
-generateTacExpr
+generateTracExpr :: InputIr.Typed InputIr.Expr -> State Temporary (Trac, Variable)
+generateTracExpr
   InputIr.Typed
     { InputIr.type',
       InputIr.item = Lined line_number expr
     } =
-    let
-      lined :: InputIr.Typed InputIr.Expr -> a -> Lined a
-      lined e = Lined (line $ InputIr.item e)
+    let lined :: InputIr.Typed InputIr.Expr -> a -> Lined a
+        lined e = Lined (line $ InputIr.item e)
 
-      lined' :: a -> Lined a
-      lined' = Lined line_number
+        lined' :: a -> Lined a
+        lined' = Lined line_number
 
-      compose2 :: (b -> c) -> (a -> a -> b) -> (a -> a -> c)
-      compose2 g f p1 p2 = g $ f p1 p2
+        compose2 :: (b -> c) -> (a -> a -> b) -> (a -> a -> c)
+        compose2 g f p1 p2 = g $ f p1 p2
 
-      compose3 :: (b -> c) -> (a -> a -> a -> b) -> (a -> a -> a -> c)
-      compose3 g f p1 p2 p3 = g $ f p1 p2 p3
+        compose3 :: (b -> c) -> (a -> a -> a -> b) -> (a -> a -> a -> c)
+        compose3 g f p1 p2 p3 = g $ f p1 p2 p3
 
-      linedUnary = compose2 lined'
-      linedBinary = compose3 lined'
+        linedUnary = compose2 lined'
+        linedBinary = compose3 lined'
      in case expr of
           InputIr.Assign
             InputIr.Identifier
@@ -139,29 +138,30 @@ generateTacExpr
               }
             exp ->
               do
-                (tac, variable) <- generateTacExpr exp
+                (trac, variable) <- generateTracExpr exp
                 let lhs = StringV lexeme
-                return (tac ++ [lined' $ Assign lhs variable], lhs)
+                return (trac ++ [lined' $ Assign lhs variable], lhs)
           InputIr.DynamicDispatch
             { InputIr.dynamicDispatchLhs = receiver,
               InputIr.dynamicDispatchMethod = method,
               InputIr.dynamicDispachArgs = args
             } -> do
               temp <- getVariable
-              dispatchArgs' <- mapM generateTacExpr args
-              let dispatchArgsTac = concatMap fst dispatchArgs'
+              dispatchArgs' <- mapM generateTracExpr args
+              let dispatchArgsTrac = concatMap fst dispatchArgs'
               let dispatchArgsV = map snd dispatchArgs'
-              (receiverTac, receiverV) <- generateTacExpr receiver
+              (receiverTrac, receiverV) <- generateTracExpr receiver
               pure
-                ( dispatchArgsTac
-                    ++ receiverTac
-                    ++ [ lined' $ Dispatch
-                           { dispatchResult = temp,
-                             dispatchMethod = InputIr.lexeme method,
-                             dispatchReceiver = receiverV,
-                             dispatchType = Nothing,
-                             dispatchArgs = dispatchArgsV
-                           }
+                ( dispatchArgsTrac
+                    ++ receiverTrac
+                    ++ [ lined' $
+                           Dispatch
+                             { dispatchResult = temp,
+                               dispatchMethod = InputIr.lexeme method,
+                               dispatchReceiver = receiverV,
+                               dispatchType = Nothing,
+                               dispatchArgs = dispatchArgsV
+                             }
                        ],
                   temp
                 )
@@ -172,20 +172,21 @@ generateTacExpr
               InputIr.dynamicDispatchArgs = args
             } -> do
               temp <- getVariable
-              dispatchArgs' <- mapM generateTacExpr args
-              let dispatchArgsTac = concatMap fst dispatchArgs'
+              dispatchArgs' <- mapM generateTracExpr args
+              let dispatchArgsTrac = concatMap fst dispatchArgs'
               let dispatchArgsV = map snd dispatchArgs'
-              (receiverTac, receiverV) <- generateTacExpr receiver
+              (receiverTrac, receiverV) <- generateTracExpr receiver
               pure
-                ( dispatchArgsTac
-                    ++ receiverTac
-                    ++ [ lined' $ Dispatch
-                           { dispatchResult = temp,
-                             dispatchMethod = InputIr.lexeme method,
-                             dispatchReceiver = receiverV,
-                             dispatchType = Just $ InputIr.Type $ InputIr.lexeme type',
-                             dispatchArgs = dispatchArgsV
-                           }
+                ( dispatchArgsTrac
+                    ++ receiverTrac
+                    ++ [ lined' $
+                           Dispatch
+                             { dispatchResult = temp,
+                               dispatchMethod = InputIr.lexeme method,
+                               dispatchReceiver = receiverV,
+                               dispatchType = Just $ InputIr.Type $ InputIr.lexeme type',
+                               dispatchArgs = dispatchArgsV
+                             }
                        ],
                   temp
                 )
@@ -194,18 +195,19 @@ generateTacExpr
               InputIr.selfDispatchArgs
             } -> do
               temp <- getVariable
-              dispatchArgs' <- mapM generateTacExpr selfDispatchArgs
-              let dispatchArgsTac = concatMap fst dispatchArgs'
+              dispatchArgs' <- mapM generateTracExpr selfDispatchArgs
+              let dispatchArgsTrac = concatMap fst dispatchArgs'
               let dispatchArgsV = map snd dispatchArgs'
               pure
-                ( dispatchArgsTac
-                    ++ [ lined' $ Dispatch
-                           { dispatchResult = temp,
-                             dispatchMethod = InputIr.lexeme selfDispatchMethod,
-                             dispatchReceiver = StringV "self",
-                             dispatchType = Nothing,
-                             dispatchArgs = dispatchArgsV
-                           }
+                ( dispatchArgsTrac
+                    ++ [ lined' $
+                           Dispatch
+                             { dispatchResult = temp,
+                               dispatchMethod = InputIr.lexeme selfDispatchMethod,
+                               dispatchReceiver = StringV "self",
+                               dispatchType = Nothing,
+                               dispatchArgs = dispatchArgsV
+                             }
                        ],
                   temp
                 )
@@ -214,44 +216,44 @@ generateTacExpr
               InputIr.trueBody,
               InputIr.falseBody
             } -> do
-              (predicateTac, predicateV) <- generateTacExpr ifPredicate
-              (trueTac, trueV) <- generateTacExpr trueBody
-              (falseTac, falseV) <- generateTacExpr falseBody
+              (predicateTrac, predicateV) <- generateTracExpr ifPredicate
+              (trueTrac, trueV) <- generateTracExpr trueBody
+              (falseTrac, falseV) <- generateTracExpr falseBody
               trueLabel <- getLabel
               trueEndLabel <- getLabel
               bodyV <- getVariable
-              let trueTac' = lined trueBody (TacLabel trueLabel) : trueTac ++ [lined trueBody (Assign bodyV trueV), lined trueBody (TacLabel trueEndLabel)]
-              let falseTac' = falseTac ++ [lined falseBody (Assign bodyV falseV), lined falseBody $ Jump trueEndLabel]
+              let trueTrac' = lined trueBody (TracLabel trueLabel) : trueTrac ++ [lined trueBody (Assign bodyV trueV), lined trueBody (TracLabel trueEndLabel)]
+              let falseTrac' = falseTrac ++ [lined falseBody (Assign bodyV falseV), lined falseBody $ Jump trueEndLabel]
               return
-                ( predicateTac
+                ( predicateTrac
                     ++ [lined ifPredicate $ ConditionalJump predicateV trueLabel]
-                    ++ falseTac'
-                    ++ trueTac',
+                    ++ falseTrac'
+                    ++ trueTrac',
                   bodyV
                 )
           InputIr.While
             { InputIr.whilePredicate,
               InputIr.whileBody
             } -> do
-              (predicateTac, predicateV) <- generateTacExpr whilePredicate
-              (bodyTac, bodyV) <- generateTacExpr whileBody
+              (predicateTrac, predicateV) <- generateTracExpr whilePredicate
+              (bodyTrac, bodyV) <- generateTracExpr whileBody
               outV <- getVariable
               whileStart <- getLabel
               endLabel <- getLabel
               notPredicateV <- getVariable
               pure
-                ( [lined whileBody $ TacLabel whileStart]
-                    ++ predicateTac
+                ( [lined whileBody $ TracLabel whileStart]
+                    ++ predicateTrac
                     ++ [lined whilePredicate $ Not notPredicateV predicateV]
                     ++ [lined whilePredicate $ ConditionalJump notPredicateV endLabel]
-                    ++ bodyTac
+                    ++ bodyTrac
                     ++ [lined whilePredicate $ Jump whileStart]
-                    ++ [lined whilePredicate $ TacLabel endLabel]
+                    ++ [lined whilePredicate $ TracLabel endLabel]
                     ++ [lined whilePredicate $ Default outV $ InputIr.Type "Object"],
                   outV
                 )
           InputIr.Block expressions -> do
-            expressions <- traverse generateTacExpr expressions
+            expressions <- traverse generateTracExpr expressions
             pure
               ( concatMap fst expressions,
                 snd $ last expressions -- this will crash on an empty block
@@ -285,10 +287,10 @@ generateTacExpr
                       let bindingV = StringV name
                        in case rhs of
                             Just rhs -> do
-                              (rhsTac, rhsV) <- generateTacExpr rhs
+                              (rhsTrac, rhsV) <- generateTracExpr rhs
                               tmp <- getVariable
                               pure
-                                ( rhsTac
+                                ( rhsTrac
                                     ++ [ lined rhs $ Assign bindingV rhsV,
                                          Lined bindingLine $ Assign tmp rhsV
                                        ],
@@ -304,12 +306,12 @@ generateTacExpr
                                 )
                 )
                 bindings
-            let bindingInitTac = concatMap fst bindings
-            let bindingResetTac = concatMap snd bindings
-            (bodyTac, bodyV) <- generateTacExpr body
-            pure (bindingInitTac ++ bodyTac ++ bindingResetTac, bodyV)
+            let bindingInitTrac = concatMap fst bindings
+            let bindingResetTrac = concatMap snd bindings
+            (bodyTrac, bodyV) <- generateTracExpr body
+            pure (bindingInitTrac ++ bodyTrac ++ bindingResetTrac, bodyV)
           InputIr.Case e elements -> do
-            (eTac, eV) <- generateTacExpr e
+            (eTrac, eV) <- generateTracExpr e
             a <-
               mapM
                 ( \InputIr.CaseElement
@@ -317,11 +319,11 @@ generateTacExpr
                        InputIr.caseElementType,
                        InputIr.caseElementBody
                      } -> do
-                      body <- generateTacExpr caseElementBody
+                      body <- generateTracExpr caseElementBody
                       pure $ CaseElement (StringV $ InputIr.lexeme caseElementVariable) (InputIr.Type $ InputIr.lexeme caseElementType) body
                 )
                 elements
-            pure (eTac, eV)
+            pure (eTrac, eV)
           InputIr.IOInInt -> ([lined' $ Comment "IO.in_int"],) <$> getVariable
           InputIr.IOInString -> ([lined' $ Comment "IO.in_string"],) <$> getVariable
           InputIr.IOOutInt -> ([lined' $ Comment "IO.out_int"],) <$> getVariable
@@ -336,44 +338,44 @@ generateTacExpr
 binaryOperation ::
   InputIr.Typed InputIr.Expr ->
   InputIr.Typed InputIr.Expr ->
-  (Variable -> Variable -> Variable -> Lined TacStatement) ->
-  State Temporary (Tac, Variable)
+  (Variable -> Variable -> Variable -> Lined TracStatement) ->
+  State Temporary (Trac, Variable)
 binaryOperation a b op = do
-  (aTac, aV) <- generateTacExpr a
-  (bTac, bV) <- generateTacExpr b
+  (aTac, aV) <- generateTracExpr a
+  (bTac, bV) <- generateTracExpr b
   resultV <- getVariable
   pure (aTac ++ bTac ++ [op resultV aV bV], resultV)
 
 unaryOperation ::
   InputIr.Typed InputIr.Expr ->
-  (Variable -> Variable -> Lined TacStatement) ->
-  State Temporary (Tac, Variable)
+  (Variable -> Variable -> Lined TracStatement) ->
+  State Temporary (Trac, Variable)
 unaryOperation exp op = do
-  (tac, v) <- generateTacExpr exp
+  (tac, v) <- generateTracExpr exp
   resultV <- getVariable
   pure (tac ++ [op resultV v], resultV)
 
-constant :: Int -> (Variable -> a -> TacStatement) -> a -> State Temporary (Tac, Variable)
+constant :: Int -> (Variable -> a -> TracStatement) -> a -> State Temporary (Trac, Variable)
 constant line statement c = do
   resultV <- getVariable
   pure ([Lined line $ statement resultV c], resultV)
 
-generateTacMethod :: InputIr.Type -> InputIr.Method -> State Temporary TacMethod
-generateTacMethod (InputIr.Type typeName) (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
-  (tac, v) <- generateTacExpr methodBody
+generateTracMethod :: InputIr.Type -> InputIr.Method -> State Temporary TracMethod
+generateTracMethod (InputIr.Type typeName) (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
+  (tac, v) <- generateTracExpr methodBody
   pure
-    TacMethod
+    TracMethod
       { methodName = InputIr.lexeme methodName,
         body =
-          Lined (InputIr.line methodName) (TacLabel (Label $ typeName ++ "_" ++ InputIr.lexeme methodName))
+          Lined (InputIr.line methodName) (TracLabel (Label $ typeName ++ "_" ++ InputIr.lexeme methodName))
             : tac
             ++ [Lined (InputIr.line methodName) $ Return v],
         formals = methodFormals,
         returnVariable = v
       }
 
-generateTacConstructor :: [InputIr.Attribute] -> State Temporary Tac
-generateTacConstructor attrs = do
+generateTracConstructor :: [InputIr.Attribute] -> State Temporary Trac
+generateTracConstructor attrs = do
   attrs' <-
     traverse
       ( \InputIr.Attribute
@@ -382,20 +384,20 @@ generateTacConstructor attrs = do
              InputIr.attrRhs
            } -> case attrRhs of
             Just e -> do
-              (tac, v) <- generateTacExpr e
-              pure [Lined line $ Assign (StringV lexeme) v]
+              (trac, v) <- generateTracExpr e
+              pure $ trac ++ [Lined line $ Assign (StringV lexeme) v]
             Nothing -> pure [Lined line $ Default (StringV lexeme) attrType]
       )
       attrs
   pure $ concat attrs'
 
-generateTac :: InputIr.InputIr -> TacIr
-generateTac (InputIr.InputIr classMap implMap parentMap ast) =
+generateTrac :: InputIr.InputIr -> TracIr
+generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
   evalState
     ( do
-        implMap' <- sequence $ Map.mapWithKey (mapM . generateTacMethod) $ Map.map (map snd) implMap
-        constructorMap <- mapM generateTacConstructor classMap
-        pure TacIr {implementationMap = implMap', constructorMap = constructorMap}
+        implMap' <- sequence $ Map.mapWithKey (mapM . generateTracMethod) $ Map.map (map snd) implMap
+        constructorMap <- mapM generateTracConstructor classMap
+        pure TracIr {implementationMap = implMap', constructorMap = constructorMap}
     )
     ( Temporary
         0

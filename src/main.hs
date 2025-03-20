@@ -6,7 +6,7 @@ import Data.Map.Strict as Map
 import InputIr
 import InputIrParser
 import System.Directory.Internal.Prelude (getArgs)
-import Tac
+import Trac
 
 -- Takes an input file name and gives us an output file name.
 outputFile :: String -> String
@@ -19,9 +19,9 @@ main = do
   inputFile <- head <$> getArgs
   input <- readFile inputFile
   let ast = InputIrParser.parse input
-  let (TacIr tacImpMap _) = generateTac ast
+  let (TracIr tracImpMap _) = generateTrac ast
   -- We want to find the Main method
-  let mainClassMethods = tacImpMap Map.! Type "Main"
-  let TacMethod {body} =
-        head $ Prelude.filter (\m -> Tac.methodName m == "main") mainClassMethods
-  writeFile (outputFile inputFile) $ showTac body
+  let mainClassMethods = tracImpMap Map.! Type "Main"
+  let TracMethod {body} =
+        head $ Prelude.filter (\m -> Trac.methodName m == "main") mainClassMethods
+  writeFile (outputFile inputFile) $ showTrac body

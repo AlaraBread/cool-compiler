@@ -1,5 +1,6 @@
 import Data.Int (Int32)
-import InputIr (Type)
+import qualified Data.Map as Map
+import InputIr (Formal, Type)
 import Trac (Label, Variable)
 
 type Twac = [TwacStatement]
@@ -36,3 +37,7 @@ data TwacStatement
   | TwacCase Variable [TwacCaseElement]
 
 data TwacCaseElement = TwacCaseElement [InputIr.Type] (Twac, Variable)
+
+data TwacIr = TwacIr {implementationMap :: Map.Map InputIr.Type [TwacMethod], constructorMap :: Map.Map InputIr.Type Twac}
+
+data TwacMethod = TwacMethod {methodName :: String, body :: Twac, formals :: [Formal], returnVariable :: Variable}

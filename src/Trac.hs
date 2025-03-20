@@ -341,19 +341,19 @@ binaryOperation ::
   (Variable -> Variable -> Variable -> Lined TracStatement) ->
   State Temporary (Trac, Variable)
 binaryOperation a b op = do
-  (aTac, aV) <- generateTracExpr a
-  (bTac, bV) <- generateTracExpr b
+  (aTrac, aV) <- generateTracExpr a
+  (bTrac, bV) <- generateTracExpr b
   resultV <- getVariable
-  pure (aTac ++ bTac ++ [op resultV aV bV], resultV)
+  pure (aTrac ++ bTrac ++ [op resultV aV bV], resultV)
 
 unaryOperation ::
   InputIr.Typed InputIr.Expr ->
   (Variable -> Variable -> Lined TracStatement) ->
   State Temporary (Trac, Variable)
 unaryOperation exp op = do
-  (tac, v) <- generateTracExpr exp
+  (trac, v) <- generateTracExpr exp
   resultV <- getVariable
-  pure (tac ++ [op resultV v], resultV)
+  pure (trac ++ [op resultV v], resultV)
 
 constant :: Int -> (Variable -> a -> TracStatement) -> a -> State Temporary (Trac, Variable)
 constant line statement c = do
@@ -362,13 +362,13 @@ constant line statement c = do
 
 generateTracMethod :: InputIr.Type -> InputIr.Method -> State Temporary TracMethod
 generateTracMethod (InputIr.Type typeName) (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
-  (tac, v) <- generateTracExpr methodBody
+  (trac, v) <- generateTracExpr methodBody
   pure
     TracMethod
       { methodName = InputIr.lexeme methodName,
         body =
           Lined (InputIr.line methodName) (TracLabel (Label $ typeName ++ "_" ++ InputIr.lexeme methodName))
-            : tac
+            : trac
             ++ [Lined (InputIr.line methodName) $ Return v],
         formals = methodFormals,
         returnVariable = v

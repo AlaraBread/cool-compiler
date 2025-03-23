@@ -2,8 +2,10 @@
 -- See https://kelloggm.github.io/martinjkellogg.com/teaching/cs485-sp25/projects/pa2.html#the-cl-ast-file-format.
 module InputIr where
 
+import Data.Foldable (minimumBy)
 import Data.Int
 import qualified Data.Map.Strict as Map
+import Data.Maybe (listToMaybe)
 import Util
 
 data InputIr = InputIr !ClassMap !ImplementationMap !ParentMap !Ast
@@ -123,3 +125,32 @@ data Identifier = Identifier
     lexeme :: !String
   }
   deriving (Show)
+
+-- Utility functions
+
+isChild :: ParentMap -> Type -> Type -> Bool
+isChild _ (Type "Object") (Type "Object") = True
+isChild _ (Type "Object") _ = False
+isChild pMap child parent = child == parent || (pMap Map.! child) == parent
+
+-- Select the lowest parent of child out of the list. The types in the list need
+-- to be distinct. If none of the types are parents, return Nothing.
+pickLowestParent :: ParentMap -> Type -> [Type] -> Maybe Type
+pickLowestParent pMap child parentCandidates = do
+  let parents = filter (isChild pMap child) parentCandidates
+  -- bail out early if we have no parents
+  _ <- listToMaybe parents
+
+  -- pick the lowest parent. note the parents are guaranteed to be in one branch
+  -- of the inheritance hierarchy. Therefore, isChild forms a (complete) order
+  -- on parents.
+  let order t1 t2
+        | t1 == t2 = EQ
+        | isChild pMap t1 t2 = LT
+        | otherwise = GT
+  pure $ minimumBy order parents
+
+-- Pick the lowest parent out of the provided list for all existing types.
+pickLowestParents :: ClassMap -> ParentMap -> [Type] -> Map.Map Type (Maybe Type)
+pickLowestParents cMap pMap parentCandidates =
+  Map.mapWithKey (\k _ -> pickLowestParent pMap k parentCandidates) cMap

@@ -13,7 +13,7 @@ import Util
 data TracIr = TracIr {implementationMap :: Map.Map InputIr.Type [TracMethod], constructorMap :: Map.Map InputIr.Type Trac}
   deriving (Show)
 
-data TracMethod = TracMethod {methodName :: String, body :: Trac, formals :: [InputIr.Formal], returnVariable :: Variable}
+data TracMethod = TracMethod {methodName :: String, body :: Trac, formals :: [InputIr.Formal]}
   deriving (Show)
 
 type Trac = [Lined TracStatement]
@@ -47,7 +47,7 @@ data TracStatement
   | Comment String
   | ConditionalJump Variable Label
   | Assign Variable Variable
-  | Case (Trac, Variable) [CaseElement]
+  | Case Variable (Trac, Variable) [CaseElement]
 
 data CaseElement = CaseElement Variable InputIr.Type (Trac, Variable)
 
@@ -81,7 +81,7 @@ instance Show TracStatement where
     Comment msg -> "comment " ++ msg
     ConditionalJump a l -> "bt " ++ show a ++ " " ++ show l
     Assign a b -> show a ++ " <- " ++ show b
-    Case e elements -> "comment case :3" -- dont bother outputting case statements for now
+    Case v e elements -> "comment case :3" -- dont bother outputting case statements for now
 
 showBinary :: Variable -> Variable -> Variable -> String -> String
 showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c
@@ -370,8 +370,7 @@ generateTracMethod (InputIr.Type typeName) (InputIr.Method {InputIr.methodName, 
           Lined (InputIr.line methodName) (TracLabel (Label $ typeName ++ "_" ++ InputIr.lexeme methodName))
             : trac
             ++ [Lined (InputIr.line methodName) $ Return v],
-        formals = methodFormals,
-        returnVariable = v
+        formals = methodFormals
       }
 
 generateTracConstructor :: [InputIr.Attribute] -> State Temporary Trac
@@ -391,9 +390,9 @@ generateTracConstructor attrs = do
       attrs
   pure $ concat attrs'
 
-generateTrac :: InputIr.InputIr -> TracIr
+generateTrac :: InputIr.InputIr -> (TracIr, Temporary)
 generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
-  evalState
+  runState
     ( do
         implMap' <- sequence $ Map.mapWithKey (mapM . generateTracMethod) $ Map.map (map snd) implMap
         constructorMap <- mapM generateTracConstructor classMap

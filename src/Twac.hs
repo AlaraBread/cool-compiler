@@ -1,10 +1,21 @@
+module Twac where
+
+import Control.Monad.State
 import Data.Int (Int32)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import InputIr (Formal, Type)
-import Trac (Label, Variable)
+import qualified InputIr
+import qualified InputIr as Twac
+import Trac (Label, Temporary, Variable, getLabel)
+import qualified Trac
+import Util
 
-type Twac = [TwacStatement]
+type Twac = [Lined TwacStatement]
 
+-- Note: we follow src, dst ordering here. This matches AT&T syntax in general.
+-- This is mildly backwards from Trac, where we have dest src1 src2.
+
+-- We also turn case statements into jump tables in the process.
 data TwacStatement
   = Add Variable Variable
   | Subtract Variable Variable
@@ -13,13 +24,13 @@ data TwacStatement
   | LessThan Variable Variable
   | LessThanOrEqualTo Variable Variable
   | Equals Variable Variable
-  | IntConstant Variable Int32
-  | BoolConstant Variable Bool
-  | StringConstant Variable String
+  | IntConstant Int32 Variable
+  | BoolConstant Bool Variable
+  | StringConstant String Variable
   | Not Variable
   | Negate Variable
-  | New Variable Type
-  | Default Variable Type
+  | New Type Variable
+  | Default Type Variable
   | IsVoid Variable
   | Dispatch
       { dispatchResult :: Variable,
@@ -29,15 +40,132 @@ data TwacStatement
         dispatchArgs :: [Variable]
       }
   | Jump Label
-  | TacLabel Label
+  | TwacLabel Label
   | Return Variable
   | Comment String
   | ConditionalJump Variable Label
   | Assign Variable Variable
-  | TwacCase Variable [TwacCaseElement]
+  | TwacCase Variable CaseJmpTable
+  | Abort Int String
 
-data TwacCaseElement = TwacCaseElement [InputIr.Type] (Twac, Variable)
+-- NOTE: this should include *every single* type.
+type CaseJmpTable = Map.Map Type Label
 
-data TwacIr = TwacIr {implementationMap :: Map.Map InputIr.Type [TwacMethod], constructorMap :: Map.Map InputIr.Type Twac}
+data TwacIr = TwacIr {implementationMap :: Map.Map InputIr.Type [TwacMethod], constructorMap :: Map.Map Type Twac}
 
-data TwacMethod = TwacMethod {methodName :: String, body :: Twac, formals :: [Formal], returnVariable :: Variable}
+data TwacMethod = TwacMethod {methodName :: String, body :: Twac, formals :: [Formal]}
+
+instance Show TwacStatement where
+  show t =
+    let showUnary op dst = show dst ++ " <- " ++ op ++ show dst
+        showBinary src dst op = show dst ++ " <- " ++ show dst ++ " " ++ op ++ " " ++ show src
+        showImmediate immediate dst = show dst ++ " <- " ++ show immediate
+     in case t of
+          Add src dst -> showBinary src dst "+"
+          Subtract src dst -> showBinary src dst "-"
+          Multiply src dst -> showBinary src dst "*"
+          Divide src dst -> showBinary src dst "/"
+          LessThan src dst -> showBinary src dst "<"
+          LessThanOrEqualTo src dst -> showBinary src dst "<="
+          Equals src dst -> showBinary src dst "="
+          IntConstant i dst -> showImmediate i dst
+          BoolConstant i dst -> showImmediate i dst
+          StringConstant i dst -> showImmediate i dst
+          Not dst -> showUnary "not " dst
+          Negate dst -> showUnary "~" dst
+          New (InputIr.Type t) dst -> show dst ++ " <- new " ++ t
+          Default (InputIr.Type t) dst -> show dst ++ " <- default " ++ t
+          IsVoid dst -> showUnary "isVoid " dst
+          -- TODO: this is incomplete
+          Dispatch {dispatchResult, dispatchMethod, dispatchReceiver} -> show dispatchReceiver ++ "." ++ dispatchMethod
+          Jump lbl -> "jmp " ++ show lbl
+          TwacLabel lbl -> "label " ++ show lbl
+          Return var -> "return " ++ show var
+          Comment str -> "comment " ++ str
+          ConditionalJump var lbl -> "bt " ++ show var ++ show lbl
+          Assign src dst -> showBinary src dst ""
+          -- TODO: this is incomplete
+          TwacCase var _ -> "case " ++ show var
+          Abort line str -> "abort " ++ show line ++ ": " ++ str
+
+showTwac twac = unlines (map show twac)
+
+generateUnaryStatement :: (Variable -> TwacStatement) -> Variable -> Variable -> [TwacStatement]
+generateUnaryStatement op dst src =
+  [Assign src dst, op dst]
+
+generateBinaryStatement :: (Variable -> Variable -> TwacStatement) -> Variable -> Variable -> Variable -> [TwacStatement]
+generateBinaryStatement op dst src1 src2 =
+  [Assign src1 dst, op src2 dst]
+
+generateTwacStatement :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracStatement -> State Temporary [TwacStatement]
+generateTwacStatement pickLowestParents tracStatement = case tracStatement of
+  Trac.Add dst src1 src2 -> pure $ generateBinaryStatement Add dst src1 src2
+  Trac.Subtract dst src1 src2 -> pure $ generateBinaryStatement Subtract dst src1 src2
+  Trac.Multiply dst src1 src2 -> pure $ generateBinaryStatement Multiply dst src1 src2
+  Trac.Divide dst src1 src2 -> pure $ generateBinaryStatement Divide dst src1 src2
+  Trac.LessThan dst src1 src2 -> pure $ generateBinaryStatement LessThan dst src1 src2
+  Trac.LessThanOrEqualTo dst src1 src2 -> pure $ generateBinaryStatement LessThanOrEqualTo dst src1 src2
+  Trac.Equals dst src1 src2 -> pure $ generateBinaryStatement Equals dst src1 src2
+  Trac.IntConstant var i -> pure [IntConstant i var]
+  Trac.BoolConstant var i -> pure [BoolConstant i var]
+  Trac.StringConstant var i -> pure [StringConstant i var]
+  Trac.Not dst src -> pure $ generateUnaryStatement Not dst src
+  Trac.Negate dst src -> pure $ generateUnaryStatement Negate dst src
+  Trac.New dst type' -> pure [New type' dst]
+  Trac.Default dst type' -> pure [New type' dst]
+  Trac.IsVoid dst src -> pure $ generateUnaryStatement Not dst src
+  Trac.Dispatch res rec t m a -> pure [Dispatch res rec t m a]
+  Trac.Jump l -> pure [Jump l]
+  Trac.TracLabel l -> pure [TwacLabel l]
+  Trac.Return v -> pure [Return v]
+  Trac.Comment c -> pure [Comment c]
+  Trac.ConditionalJump v l -> pure [ConditionalJump v l]
+  Trac.Assign dst src -> pure [Assign src dst]
+  Trac.Case outputVariable (initializer, caseOf) caseElements -> do
+    initializer' <- tracToTwac pickLowestParents initializer
+    let types = fmap (\(Trac.CaseElement _ t _) -> t) caseElements
+
+    caseElementLabels <- mapM (\(Trac.CaseElement {}) -> getLabel) caseElements
+
+    errorCaseLabel <- getLabel
+    -- TODO: include the line number
+    let errorCase = [TwacLabel errorCaseLabel, Abort 0 "no match found for case :<"]
+
+    terminatingLabel <- getLabel
+
+    caseElementBodies <-
+      mapM
+        ( \(Trac.CaseElement _ _ (trac, v), l) ->
+            (++ [Lined 0 $ TwacLabel l, Lined 0 $ Assign v outputVariable, Lined 0 $ Jump terminatingLabel])
+              <$> tracToTwac pickLowestParents trac
+        )
+        $ zip caseElements caseElementLabels
+
+    let caseLabelTable = Map.fromList $ zip types caseElementLabels
+    let jumpTable = maybe errorCaseLabel (caseLabelTable Map.!) <$> pickLowestParents types
+
+    -- TODO: THIS LOSES LINE NUMBERS ON THE ELEMENT BODIES. THAT IS BAD.
+    pure $
+      [Assign caseOf outputVariable, TwacCase outputVariable jumpTable]
+        ++ concatMap (fmap item) caseElementBodies
+        ++ errorCase
+
+-- I cannot tell if this is the most beautiful or the most ugly code I have
+-- written. I think I am leaning towards the most ugly. This is hyperbole of
+-- course, but it's... certainly something. Honestly, I constructed it through
+-- iterating away type errors.
+tracToTwac :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.Trac -> State Temporary Twac
+tracToTwac pickLowestParents trac =
+  concatMap unsequence <$> mapM (mapM (generateTwacStatement pickLowestParents)) trac
+
+generateTwacMethod :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracMethod -> State Temporary TwacMethod
+generateTwacMethod pickLowestParents (Trac.TracMethod methodName body formals) =
+  TwacMethod methodName <$> tracToTwac pickLowestParents body <*> pure formals
+
+generateTwac :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracIr -> Temporary -> (TwacIr, Temporary)
+generateTwac pickLowestParents (Trac.TracIr impMap constructorMap) =
+  runState $
+    TwacIr
+      <$> traverse (traverse $ generateTwacMethod pickLowestParents) impMap
+      <*> traverse (tracToTwac pickLowestParents) constructorMap

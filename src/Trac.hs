@@ -9,6 +9,7 @@ import qualified Data.Map.Strict as Map
 import Distribution.Simple.Utils (lowercase)
 import qualified InputIr
 import Util
+import InputIr (Method(methodFormals))
 
 data TracIr = TracIr {implementationMap :: Map.Map InputIr.Type [TracMethod], constructorMap :: Map.Map InputIr.Type Trac}
   deriving (Show)
@@ -413,16 +414,8 @@ resolveVariable paramMap attributeMap variable = case Map.lookup variable paramM
 
 generateTracMethod :: [InputIr.Attribute] -> InputIr.Type -> InputIr.Method -> State Temporary TracMethod
 generateTracMethod attributes type' (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
-  let paramMap =
-        fst $
-          foldl
-            ( \(map, idx)
-               InputIr.Formal
-                 { InputIr.formalName = InputIr.Identifier {InputIr.lexeme}
-                 } -> (Map.insert lexeme 1 map, idx + 1)
-            )
-            (Map.empty, 0)
-            methodFormals
+  let paramNames = map (InputIr.lexeme . InputIr.formalName) methodFormals
+  let paramMap = Map.fromList $ zip paramNames [1..]
   let attributeMap = generateAttributeMap attributes
   (trac, v) <- generateTracExpr paramMap attributeMap type' methodBody
   let InputIr.Type typeName = type'

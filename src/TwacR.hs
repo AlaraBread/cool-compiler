@@ -1,9 +1,13 @@
 module TwacR where
 
-import TwacLs (TwacLsG)
+import TwacLs (TwacLsG, TwacLsStatementG)
+import Util
 
--- Trac, but with x86-64 register allocation
-type TracR = TwacLsG Registers
+type TracR = TwacLs Registers
+
+type TwacRStatement = TwacLsStatementG Registers
+
+type TwacLs v = [Lined (TwacLsStatementG v)]
 
 data Registers
   = Rax

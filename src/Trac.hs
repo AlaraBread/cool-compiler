@@ -317,7 +317,7 @@ generateTracExpr
 
             initializer <- case rhs of
               Just rhs' -> do
-                (rhsTrac, rhsV) <- generateTracExpr bindingMap' selfType rhs'
+                (rhsTrac, rhsV) <- generateTracExpr bindingMap selfType rhs'
                 pure $
                   rhsTrac
                     ++ [ Lined (InputIr.line bindingName) $ Comment $ InputIr.lexeme bindingName ++ " <- rhs",
@@ -325,7 +325,7 @@ generateTracExpr
                        ]
               Nothing -> pure []
 
-            (restTrac, restV) <- generateTracExpr bindingMap selfType $ InputIr.Typed type' $ lined' $ InputIr.Let rest body
+            (restTrac, restV) <- generateTracExpr bindingMap' selfType $ InputIr.Typed type' $ lined' $ InputIr.Let rest body
 
             pure (defaultInitializer ++ initializer ++ restTrac, restV)
           InputIr.Case e elements -> do

@@ -14,6 +14,7 @@ type Twac v = [Lined (TwacStatement v)]
 
 -- TwacI means TWAC initial, i.e. our first version of TWAC in the pipeline.
 type TwacI = Twac Variable
+
 type TwacStatementI = TwacStatement Variable
 
 -- Note: we follow src, dst ordering here. This matches AT&T syntax in general.
@@ -60,7 +61,7 @@ data TwacIr v = TwacIr {implementationMap :: Map.Map InputIr.Type [TwacMethod v]
 
 data TwacMethod v = TwacMethod {methodName :: String, body :: Twac v, formals :: [Formal]}
 
-instance Show v => Show (TwacStatement v) where
+instance (Show v) => Show (TwacStatement v) where
   show t =
     let showUnary op dst = show dst ++ " <- " ++ op ++ show dst
         showBinary src dst op = show dst ++ " <- " ++ show dst ++ " " ++ op ++ " " ++ show src

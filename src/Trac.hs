@@ -426,6 +426,7 @@ generateTracMethod attributes type' (InputIr.Method {InputIr.methodName, InputIr
 generateTracConstructor :: InputIr.Type -> [InputIr.Attribute] -> State Temporary Trac
 generateTracConstructor selfType attrs = do
   let attributeMap = generateAttributeMap attrs
+  let bindingMap = Map.insert "self" (ParameterV 0) attributeMap
   attrs' <-
     traverse
       ( \( InputIr.Attribute

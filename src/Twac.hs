@@ -10,53 +10,57 @@ import Trac (Label, Temporary, Variable, getLabel)
 import qualified Trac
 import Util
 
-type Twac = [Lined TwacStatement]
+type Twac v = [Lined (TwacStatement v)]
+
+-- TwacI means TWAC initial, i.e. our first version of TWAC in the pipeline.
+type TwacI = Twac Variable
+type TwacStatementI = TwacStatement Variable
 
 -- Note: we follow src, dst ordering here. This matches AT&T syntax in general.
 -- This is mildly backwards from Trac, where we have dest src1 src2.
 
 -- We also turn case statements into jump tables in the process.
-data TwacStatement
-  = Add Variable Variable
-  | Subtract Variable Variable
-  | Multiply Variable Variable
-  | Divide Variable Variable
-  | LessThan Variable Variable
-  | LessThanOrEqualTo Variable Variable
-  | Equals Variable Variable
-  | IntConstant Int32 Variable
-  | BoolConstant Bool Variable
-  | StringConstant String Variable
-  | Not Variable
-  | Negate Variable
-  | New Type Variable
-  | Default Type Variable
-  | IsVoid Variable
+data TwacStatement v
+  = Add v v
+  | Subtract v v
+  | Multiply v v
+  | Divide v v
+  | LessThan v v
+  | LessThanOrEqualTo v v
+  | Equals v v
+  | IntConstant Int32 v
+  | BoolConstant Bool v
+  | StringConstant String v
+  | Not v
+  | Negate v
+  | New Type v
+  | Default Type v
+  | IsVoid v
   | Dispatch
-      { dispatchResult :: Variable,
-        dispatchReceiver :: Variable,
+      { dispatchResult :: v,
+        dispatchReceiver :: v,
         dispatchReceiverType :: Type,
         dispatchType :: Maybe Type,
         dispatchMethod :: String,
-        dispatchArgs :: [Variable]
+        dispatchArgs :: [v]
       }
   | Jump Label
   | TwacLabel Label
-  | Return Variable
+  | Return v
   | Comment String
-  | ConditionalJump Variable Label
-  | Assign Variable Variable
-  | TwacCase Variable CaseJmpTable
+  | ConditionalJump v Label
+  | Assign v v
+  | TwacCase v CaseJmpTable
   | Abort Int String
 
 -- NOTE: this should include *every single* type.
 type CaseJmpTable = Map.Map Type Label
 
-data TwacIr = TwacIr {implementationMap :: Map.Map InputIr.Type [TwacMethod], constructorMap :: Map.Map Type Twac}
+data TwacIr v = TwacIr {implementationMap :: Map.Map InputIr.Type [TwacMethod v], constructorMap :: Map.Map Type (Twac v)}
 
-data TwacMethod = TwacMethod {methodName :: String, body :: Twac, formals :: [Formal]}
+data TwacMethod v = TwacMethod {methodName :: String, body :: Twac v, formals :: [Formal]}
 
-instance Show TwacStatement where
+instance Show v => Show (TwacStatement v) where
   show t =
     let showUnary op dst = show dst ++ " <- " ++ op ++ show dst
         showBinary src dst op = show dst ++ " <- " ++ show dst ++ " " ++ op ++ " " ++ show src
@@ -91,15 +95,15 @@ instance Show TwacStatement where
 
 showTwac twac = unlines (map show twac)
 
-generateUnaryStatement :: (Variable -> TwacStatement) -> Variable -> Variable -> [TwacStatement]
+generateUnaryStatement :: (Variable -> TwacStatementI) -> Variable -> Variable -> [TwacStatementI]
 generateUnaryStatement op dst src =
   [Assign src dst, op dst]
 
-generateBinaryStatement :: (Variable -> Variable -> TwacStatement) -> Variable -> Variable -> Variable -> [TwacStatement]
+generateBinaryStatement :: (Variable -> Variable -> TwacStatementI) -> Variable -> Variable -> Variable -> [TwacStatementI]
 generateBinaryStatement op dst src1 src2 =
   [Assign src1 dst, op src2 dst]
 
-generateTwacStatement :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracStatement -> State Temporary [TwacStatement]
+generateTwacStatement :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracStatement -> State Temporary [TwacStatementI]
 generateTwacStatement pickLowestParents tracStatement = case tracStatement of
   Trac.Add dst src1 src2 -> pure $ generateBinaryStatement Add dst src1 src2
   Trac.Subtract dst src1 src2 -> pure $ generateBinaryStatement Subtract dst src1 src2
@@ -156,15 +160,15 @@ generateTwacStatement pickLowestParents tracStatement = case tracStatement of
 -- written. I think I am leaning towards the most ugly. This is hyperbole of
 -- course, but it's... certainly something. Honestly, I constructed it through
 -- iterating away type errors.
-tracToTwac :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.Trac -> State Temporary Twac
+tracToTwac :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.Trac -> State Temporary TwacI
 tracToTwac pickLowestParents trac =
   concatMap unsequence <$> mapM (mapM (generateTwacStatement pickLowestParents)) trac
 
-generateTwacMethod :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracMethod -> State Temporary TwacMethod
+generateTwacMethod :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracMethod -> State Temporary (TwacMethod Variable)
 generateTwacMethod pickLowestParents (Trac.TracMethod methodName body formals) =
   TwacMethod methodName <$> tracToTwac pickLowestParents body <*> pure formals
 
-generateTwac :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracIr -> Temporary -> (TwacIr, Temporary)
+generateTwac :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracIr -> Temporary -> (TwacIr Variable, Temporary)
 generateTwac pickLowestParents (Trac.TracIr impMap constructorMap) =
   runState $
     TwacIr

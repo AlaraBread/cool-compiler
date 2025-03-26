@@ -35,6 +35,7 @@ data TwacStatement
   | Dispatch
       { dispatchResult :: Variable,
         dispatchReceiver :: Variable,
+        dispatchReceiverType :: Type,
         dispatchType :: Maybe Type,
         dispatchMethod :: String,
         dispatchArgs :: [Variable]
@@ -115,7 +116,7 @@ generateTwacStatement pickLowestParents tracStatement = case tracStatement of
   Trac.New dst type' -> pure [New type' dst]
   Trac.Default dst type' -> pure [New type' dst]
   Trac.IsVoid dst src -> pure $ generateUnaryStatement Not dst src
-  Trac.Dispatch res rec t m a -> pure [Dispatch res rec t m a]
+  Trac.Dispatch res rec recType t m as -> pure [Dispatch res rec recType t m as]
   Trac.Jump l -> pure [Jump l]
   Trac.TracLabel l -> pure [TwacLabel l]
   Trac.Return v -> pure [Return v]
@@ -124,7 +125,7 @@ generateTwacStatement pickLowestParents tracStatement = case tracStatement of
   Trac.Assign dst src -> pure [Assign src dst]
   Trac.Case outputVariable (initializer, caseOf) caseElements -> do
     initializer' <- tracToTwac pickLowestParents initializer
-    let types = fmap (\(Trac.CaseElement _ t _) -> t) caseElements
+    let types = fmap (\(Trac.CaseElement t _) -> t) caseElements
 
     caseElementLabels <- mapM (\(Trac.CaseElement {}) -> getLabel) caseElements
 
@@ -136,7 +137,7 @@ generateTwacStatement pickLowestParents tracStatement = case tracStatement of
 
     caseElementBodies <-
       mapM
-        ( \(Trac.CaseElement _ _ (trac, v), l) ->
+        ( \(Trac.CaseElement _ (trac, v), l) ->
             (++ [Lined 0 $ TwacLabel l, Lined 0 $ Assign v outputVariable, Lined 0 $ Jump terminatingLabel])
               <$> tracToTwac pickLowestParents trac
         )

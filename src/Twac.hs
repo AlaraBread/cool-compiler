@@ -15,7 +15,7 @@ type Twac v = [Lined (TwacStatement v)]
 -- TwacI means TWAC initial, i.e. our first version of TWAC in the pipeline.
 type TwacI = Twac Variable
 
-type TwacStatementI = TwacStatement Variable
+type TwacIStatement = TwacStatement Variable
 
 -- Note: we follow src, dst ordering here. This matches AT&T syntax in general.
 -- This is mildly backwards from Trac, where we have dest src1 src2.
@@ -58,6 +58,7 @@ data TwacStatement v
 type CaseJmpTable = Map.Map Type Label
 
 data TwacIr v = TwacIr {implementationMap :: Map.Map InputIr.Type [TwacMethod v], constructorMap :: Map.Map Type (Twac v)}
+type TwacIIr = TwacIr Variable
 
 data TwacMethod v = TwacMethod {methodName :: String, body :: Twac v, formals :: [Formal]}
 
@@ -96,15 +97,15 @@ instance (Show v) => Show (TwacStatement v) where
 
 showTwac twac = unlines (map show twac)
 
-generateUnaryStatement :: (Variable -> TwacStatementI) -> Variable -> Variable -> [TwacStatementI]
+generateUnaryStatement :: (Variable -> TwacIStatement) -> Variable -> Variable -> [TwacIStatement]
 generateUnaryStatement op dst src =
   [Assign src dst, op dst]
 
-generateBinaryStatement :: (Variable -> Variable -> TwacStatementI) -> Variable -> Variable -> Variable -> [TwacStatementI]
+generateBinaryStatement :: (Variable -> Variable -> TwacIStatement) -> Variable -> Variable -> Variable -> [TwacIStatement]
 generateBinaryStatement op dst src1 src2 =
   [Assign src1 dst, op src2 dst]
 
-generateTwacStatement :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracStatement -> State Temporary [TwacStatementI]
+generateTwacStatement :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracStatement -> State Temporary [TwacIStatement]
 generateTwacStatement pickLowestParents tracStatement = case tracStatement of
   Trac.Add dst src1 src2 -> pure $ generateBinaryStatement Add dst src1 src2
   Trac.Subtract dst src1 src2 -> pure $ generateBinaryStatement Subtract dst src1 src2

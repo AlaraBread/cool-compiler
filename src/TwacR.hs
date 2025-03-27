@@ -1,15 +1,18 @@
 module TwacR where
 
-import TwacLs (TwacLsG, TwacLsStatementG)
+import Trac (Variable)
+import Twac
 import Util
 
-type TracR = TwacLs Registers
+-- Twac with Register allocation, and consequently load/store operations.
+type TwacR = [Lined TwacRStatement]
 
-type TwacRStatement = TwacLsStatementG Registers
+data TwacRStatement
+  = TwacRStatement (TwacStatement Register)
+  | Load Variable Register
+  | Store Register Variable
 
-type TwacLs v = [Lined (TwacLsStatementG v)]
-
-data Registers
+data Register
   = Rax
   | Rbx
   | Rcx

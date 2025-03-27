@@ -141,7 +141,6 @@ generateTracExpr
 
         linedUnary = compose2 lined'
         linedBinary = compose3 lined'
-        unaryOperation' = unaryOperation generateTracExpr'
 
         generateTracExpr' = generateTracExpr bindingMap selfType
      in case expr of

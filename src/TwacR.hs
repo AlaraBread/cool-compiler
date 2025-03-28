@@ -145,10 +145,9 @@ generateTwacRStatements epilogue freeRegisters twac =
         -- be available, Return is guaranteed to be the last thing in a
         -- function.
         Return ret ->
-          map item epilogue ++ [
-            Load ret Rax,
-            TwacRStatement $ Return Rax
-          ]
+          Load ret Rax
+            : map item epilogue
+            ++ [TwacRStatement $ Return Rax]
         Comment comment -> [TwacRStatement $ Comment comment]
         ConditionalJump v label ->
           let (vR, freeRegisters') = Set.deleteFindMin freeRegisters

@@ -83,6 +83,9 @@
    return address     
    saved rbp          
    callee saved regs  
+   parameter 1
+   ...
+   parameter (up to) 6
    temporaries        
 
 

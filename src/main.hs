@@ -8,7 +8,6 @@ import InputIrParser
 import System.Directory.Internal.Prelude (getArgs)
 import Trac
 import Twac
-import Debug.Trace (traceShowId)
 
 -- Takes an input file name and gives us an output file name.
 outputFile :: String -> String
@@ -33,13 +32,13 @@ main = do
   -- print out Trac for debugging
   let (TracIr tracImpMap _) = tracIr
   let mainClassMethods' = tracImpMap Map.! Type "Main"
-  let TracMethod _ body' _ =
+  let TracMethod _ body' _ _ =
         head $ Prelude.filter (\m -> Trac.methodName m == "main") mainClassMethods'
   putStrLn $ showTrac body'
 
   -- We want to find the Main method
   let mainClassMethods = twacImpMap Map.! Type "Main"
 
-  let TwacMethod _ body _ =
+  let TwacMethod _ body _ _ =
         head $ Prelude.filter (\m -> Twac.methodName m == "main") mainClassMethods
   writeFile (outputFile inputFile) $ showTwac body

@@ -15,7 +15,7 @@ import Util
 data TracIr = TracIr {implementationMap :: Map.Map InputIr.Type [TracMethod], constructorMap :: Map.Map InputIr.Type Trac}
   deriving (Show)
 
-data TracMethod = TracMethod {methodName :: String, body :: Trac, formals :: [InputIr.Formal]}
+data TracMethod = TracMethod {methodName :: String, body :: Trac, formals :: [InputIr.Formal], temporaryCount :: Int}
   deriving (Show)
 
 type Trac = [Lined TracStatement]
@@ -412,6 +412,7 @@ generateTracMethod attributes type' (InputIr.Method {InputIr.methodName, InputIr
   let bindingMap = Map.union paramMap attributeMap
 
   (trac, v) <- generateTracExpr bindingMap type' methodBody
+  temporaryCount <- gets (\(Temporary l t) -> t)
   let InputIr.Type typeName = type'
   pure
     TracMethod
@@ -420,7 +421,8 @@ generateTracMethod attributes type' (InputIr.Method {InputIr.methodName, InputIr
           Lined (InputIr.line methodName) (TracLabel (Label $ typeName ++ "_" ++ InputIr.lexeme methodName))
             : trac
             ++ [Lined (InputIr.line methodName) $ Return v],
-        formals = methodFormals
+        formals = methodFormals,
+        temporaryCount = temporaryCount
       }
 
 generateTracConstructor :: InputIr.Type -> [InputIr.Attribute] -> State Temporary Trac

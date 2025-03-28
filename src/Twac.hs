@@ -61,7 +61,7 @@ data TwacIr v = TwacIr {implementationMap :: Map.Map InputIr.Type [TwacMethod v]
 
 type TwacIIr = TwacIr Variable
 
-data TwacMethod v = TwacMethod {methodName :: String, body :: Twac v, formals :: [Formal], numTemporaries :: Int}
+data TwacMethod v = TwacMethod {methodName :: String, body :: Twac v, formals :: [Formal], temporaryCount :: Int}
 
 instance (Show v) => Show (TwacStatement v) where
   show t =
@@ -168,8 +168,11 @@ tracToTwac pickLowestParents trac =
   concatMap unsequence <$> mapM (mapM (generateTwacStatement pickLowestParents)) trac
 
 generateTwacMethod :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracMethod -> State Temporary (TwacMethod Variable)
-generateTwacMethod pickLowestParents (Trac.TracMethod methodName body formals) =
-  TwacMethod $ methodName <$> tracToTwac pickLowestParents body <*> pure formals numTemporaries
+generateTwacMethod pickLowestParents (Trac.TracMethod methodName body formals temporaryCount) = do
+  modify (\(Trac.Temporary l t) -> Trac.Temporary l temporaryCount)
+  body' <- tracToTwac pickLowestParents body
+  temporaryCount' <- gets (\(Trac.Temporary l t) -> t)
+  pure $ TwacMethod methodName body' formals temporaryCount'
 
 generateTwac :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracIr -> Temporary -> (TwacIr Variable, Temporary)
 generateTwac pickLowestParents (Trac.TracIr impMap constructorMap) =

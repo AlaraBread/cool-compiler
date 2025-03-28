@@ -21,7 +21,8 @@ data TwacRStatement
   | Store Register Variable
   | Push Register
   | Pop Register
-  | AllocateStackSpace Int
+  | -- This is in words (8 bytes)
+    AllocateStackSpace Int
   | DeallocateStackSpace Int
 
 data Register
@@ -47,6 +48,8 @@ allRegisters = Set.fromList [Rax, Rbx, Rcx, Rdx, Rsi, Rsp, Rbp, R8, R9, R10, R11
 
 paramRegisters = [Rdi, Rsi, Rdx, Rcx, R8, R9]
 
+calleeSavedRegisters = [Rbp, Rbx, Rsp, R12, R13, R14, R15]
+
 -- This is a really inefficient way of doing this, at least for Rax and Rdx.
 -- Anyways...
 reservedRegisters =
@@ -60,8 +63,8 @@ reservedRegisters =
 freeRegisters = Set.difference allRegisters reservedRegisters
 
 -- This maximally inserts loads and stores. We will worry about this later :).
-generateTwacRStatements :: Set.Set Register -> TwacIStatement -> [TwacRStatement]
-generateTwacRStatements freeRegisters twac =
+generateTwacRStatements :: TwacR -> Set.Set Register -> TwacIStatement -> [TwacRStatement]
+generateTwacRStatements epilogue freeRegisters twac =
   let -- The invariant on all of these is that any registers they consume should
       -- be free-to-use after they run.
 
@@ -142,7 +145,7 @@ generateTwacRStatements freeRegisters twac =
         -- be available, Return is guaranteed to be the last thing in a
         -- function.
         Return ret ->
-          [ DeallocateStackSpace 1,
+          map item epilogue ++ [
             Load ret Rax,
             TwacRStatement $ Return Rax
           ]
@@ -164,20 +167,26 @@ generateTwacRStatements freeRegisters twac =
               ]
         Abort line message -> [TwacRStatement $ Abort line message]
 
-generateTwacR :: TwacI -> TwacR
-generateTwacR = concatMap (unsequence . fmap (generateTwacRStatements freeRegisters))
+generateTwacR :: TwacR -> TwacI -> TwacR
+generateTwacR epilogue = concatMap (unsequence . fmap (generateTwacRStatements epilogue freeRegisters))
 
 generateTwacRMethod :: TwacMethod Variable -> TwacRMethod
-generateTwacRMethod (TwacMethod name body formals) =
-  TwacRMethod
-    name
-    -- push rbp and decrement rsp by number of temporaries here
-    ( map (Lined 0 . Push) paramRegisters
-        ++ generateTwacR body
-    )
-    formals
+generateTwacRMethod (TwacMethod name body formals temporaryCount) =
+  let -- This is always a multiple of 16 bytes, to keep the stack 16-byte aligned.
+      temporarySpace = temporaryCount + (temporaryCount + length paramRegisters) `rem` 1
+      prologue =
+        map (Lined 0 . Push) calleeSavedRegisters
+          ++ map (Lined 0 . Push) paramRegisters
+          ++ [Lined 0 $ AllocateStackSpace temporarySpace]
+      epilogue =
+        Lined 0 (DeallocateStackSpace (temporarySpace + length paramRegisters))
+          : map (Lined 0 . Pop) (reverse calleeSavedRegisters)
+   in TwacRMethod
+        name
+        (prologue ++ generateTwacR epilogue body)
+        formals
 
 generateTwacRIr :: TwacIIr -> TwacRIr
 generateTwacRIr (TwacIr impMap constructorMap) =
-  let gen = generateTwacRStatements freeRegisters
-   in TwacRIr (fmap (fmap generateTwacRMethod) impMap) (fmap generateTwacR constructorMap)
+  let gen = generateTwacRStatements [] freeRegisters
+   in TwacRIr (fmap (fmap generateTwacRMethod) impMap) (fmap (generateTwacR []) constructorMap)

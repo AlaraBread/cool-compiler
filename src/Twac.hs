@@ -58,9 +58,10 @@ data TwacStatement v
 type CaseJmpTable = Map.Map Type Label
 
 data TwacIr v = TwacIr {implementationMap :: Map.Map InputIr.Type [TwacMethod v], constructorMap :: Map.Map Type (Twac v)}
+
 type TwacIIr = TwacIr Variable
 
-data TwacMethod v = TwacMethod {methodName :: String, body :: Twac v, formals :: [Formal]}
+data TwacMethod v = TwacMethod {methodName :: String, body :: Twac v, formals :: [Formal], numTemporaries :: Int}
 
 instance (Show v) => Show (TwacStatement v) where
   show t =
@@ -168,7 +169,7 @@ tracToTwac pickLowestParents trac =
 
 generateTwacMethod :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracMethod -> State Temporary (TwacMethod Variable)
 generateTwacMethod pickLowestParents (Trac.TracMethod methodName body formals) =
-  TwacMethod methodName <$> tracToTwac pickLowestParents body <*> pure formals
+  TwacMethod $ methodName <$> tracToTwac pickLowestParents body <*> pure formals numTemporaries
 
 generateTwac :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracIr -> Temporary -> (TwacIr Variable, Temporary)
 generateTwac pickLowestParents (Trac.TracIr impMap constructorMap) =

@@ -74,17 +74,15 @@
   --------------------
    caller’s           
   --------------------
-   ptr to previous ar 
-   return address     
-   parameters6        
+   parameter n        
    ...                
-   parameters7        
-   frame pointer      
+   parameter 7        
   --------------------
    callee’s           
   --------------------
-   saved registers    
-   locals             
+   return address     
+   saved rbp          
+   callee saved regs  
    temporaries        
 
 

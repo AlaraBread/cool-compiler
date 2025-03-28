@@ -3,12 +3,13 @@ module TwacR where
 import Control.Exception (assert)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import InputIr (Type, Formal)
+import InputIr (Formal, Type)
 import Trac (Variable)
 import Twac
 import Util
 
 data TwacRIr = TwacRIr {implementationMap :: Map.Map Type [TwacRMethod], constructorMap :: Map.Map Type TwacR}
+
 data TwacRMethod = TwacRMethod {methodName :: String, body :: TwacR, formals :: [Formal]}
 
 -- Twac with Register allocation, and consequently load/store operations.
@@ -18,6 +19,10 @@ data TwacRStatement
   = TwacRStatement (TwacStatement Register)
   | Load Variable Register
   | Store Register Variable
+  | Push Register
+  | Pop Register
+  | AllocateStackSpace Int
+  | DeallocateStackSpace Int
 
 data Register
   = Rax
@@ -39,6 +44,8 @@ data Register
   deriving (Show, Eq, Ord)
 
 allRegisters = Set.fromList [Rax, Rbx, Rcx, Rdx, Rsi, Rsp, Rbp, R8, R9, R10, R11, R12, R13, R14, R15]
+
+paramRegisters = [Rdi, Rsi, Rdx, Rcx, R8, R9]
 
 -- This is a really inefficient way of doing this, at least for Rax and Rdx.
 -- Anyways...
@@ -117,13 +124,16 @@ generateTwacRStatements freeRegisters twac =
             dispatchMethod,
             dispatchArgs
           } ->
-            let -- TODO: handle more than six arguments, somehow. THIS IS IMPORTANT.
-                -- I added a test that this assert will fail.
-                dispatchArgs' = dispatchReceiver : assert (length dispatchArgs <= 5) dispatchArgs
-                argRs = take (length dispatchArgs') [Rdi, Rsi, Rdx, Rcx, R8, R9]
-                argsLoad = zipWith Load dispatchArgs' argRs
-             in argsLoad
-                  ++ [ TwacRStatement $ Dispatch Rax Rdi dispatchReceiverType dispatchType dispatchMethod argRs,
+            let dispatchArgs' = dispatchReceiver : dispatchArgs
+                argsR = zipWith Load dispatchArgs' paramRegisters
+                memoryArgs = drop (length paramRegisters) dispatchArgs'
+                -- stack needs to be 16 byte aligned
+                memoryArgs' = if even $ length memoryArgs then memoryArgs else memoryArgs ++ [head memoryArgs]
+             in concatMap
+                  (\v -> [Load v Rdi, Push Rdi])
+                  (reverse memoryArgs')
+                  ++ argsR
+                  ++ [ TwacRStatement $ Dispatch Rax Rdi dispatchReceiverType dispatchType dispatchMethod (take (length dispatchArgs') paramRegisters),
                        Store Rax dispatchResult
                      ]
         Jump label -> [TwacRStatement $ Jump label]
@@ -132,7 +142,8 @@ generateTwacRStatements freeRegisters twac =
         -- be available, Return is guaranteed to be the last thing in a
         -- function.
         Return ret ->
-          [ Load ret Rax,
+          [ DeallocateStackSpace 1,
+            Load ret Rax,
             TwacRStatement $ Return Rax
           ]
         Comment comment -> [TwacRStatement $ Comment comment]
@@ -157,10 +168,16 @@ generateTwacR :: TwacI -> TwacR
 generateTwacR = concatMap (unsequence . fmap (generateTwacRStatements freeRegisters))
 
 generateTwacRMethod :: TwacMethod Variable -> TwacRMethod
-generateTwacRMethod (TwacMethod name body formals) = TwacRMethod name (generateTwacR body) formals
+generateTwacRMethod (TwacMethod name body formals) =
+  TwacRMethod
+    name
+    -- push rbp and decrement rsp by number of temporaries here
+    ( map (Lined 0 . Push) paramRegisters
+        ++ generateTwacR body
+    )
+    formals
 
 generateTwacRIr :: TwacIIr -> TwacRIr
 generateTwacRIr (TwacIr impMap constructorMap) =
   let gen = generateTwacRStatements freeRegisters
-  in
-    TwacRIr (fmap (fmap generateTwacRMethod) impMap) (fmap generateTwacR constructorMap)
+   in TwacRIr (fmap (fmap generateTwacRMethod) impMap) (fmap generateTwacR constructorMap)

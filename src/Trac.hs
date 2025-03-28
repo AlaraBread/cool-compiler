@@ -92,10 +92,10 @@ showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c
 showUnary :: Variable -> Variable -> String -> String
 showUnary a b op = show a ++ " <- " ++ op ++ " " ++ show b
 
-data Variable = TemporaryV Temporary | ParameterV Int | AttributeV Int
+data Variable = TemporaryV Int | ParameterV Int | AttributeV Int
 
 instance Show Variable where
-  show (TemporaryV (Temporary t)) = "temp#" ++ show t
+  show (TemporaryV t) = "temp#" ++ show t
   show (AttributeV i) = "attribute#" ++ show i
   show (ParameterV i) = "parameter#" ++ show i
 
@@ -104,16 +104,17 @@ newtype Label = Label String
 instance Show Label where
   show (Label l) = l
 
-newtype Temporary = Temporary Int
+-- label count (global), temporary count (local)
+data Temporary = Temporary Int Int
   deriving (Show)
 
 showTrac trac = unlines (map show trac)
 
 getVariable :: State Temporary Variable
-getVariable = state $ \(Temporary i) -> (TemporaryV $ Temporary $ i + 1, Temporary $ i + 1)
+getVariable = state $ \(Temporary l t) -> (TemporaryV $ t + 1, Temporary l $ t + 1)
 
 getLabel :: State Temporary Label
-getLabel = state $ \(Temporary i) -> (Label $ "l" ++ show (i + 1), Temporary $ i + 1)
+getLabel = state $ \(Temporary l t) -> (Label $ "l" ++ show (l + 1), Temporary (l + 1) t)
 
 generateTracExpr ::
   Map.Map String Variable ->
@@ -459,5 +460,6 @@ generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
         pure TracIr {implementationMap = implMap', constructorMap = constructorMap}
     )
     ( Temporary
+        0
         0
     )

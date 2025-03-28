@@ -10,7 +10,7 @@ import Util
 
 data TwacRIr = TwacRIr {implementationMap :: Map.Map Type [TwacRMethod], constructorMap :: Map.Map Type TwacR}
 
-data TwacRMethod = TwacRMethod {methodName :: String, body :: TwacR, formals :: [Formal]}
+data TwacRMethod = TwacRMethod {methodName :: String, body :: TwacR, registerParamCount :: Int, stackParamCount :: Int}
 
 -- Twac with Register allocation, and consequently load/store operations.
 type TwacR = [Lined TwacRStatement]
@@ -183,7 +183,8 @@ generateTwacRMethod (TwacMethod name body formals temporaryCount) =
    in TwacRMethod
         name
         (prologue ++ generateTwacR epilogue body)
-        formals
+        (min 6 $ 1 + length formals)
+        (max 0 $ 1 - 6 + length formals)
 
 generateTwacRIr :: TwacIIr -> TwacRIr
 generateTwacRIr (TwacIr impMap constructorMap) =

@@ -81,7 +81,7 @@ allRegisters = Set.fromList [Rax, Rbx, Rcx, Rdx, Rsi, Rsp, Rbp, R8, R9, R10, R11
 
 paramRegisters = [Rdi, Rsi, Rdx, Rcx, R8, R9]
 
-calleeSavedRegisters = [Rbp, Rbx, Rsp, R12, R13, R14, R15]
+calleeSavedRegisters = [Rbp, Rbx, R12, R13, R14, R15]
 
 -- This is a really inefficient way of doing this, at least for Rax and Rdx.
 -- Anyways...
@@ -212,6 +212,7 @@ generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount
       -- This is always 16n+8 bytes, to keep the stack 16-byte aligned. Note the
       -- return address unaligns the stack by 8 bytes, so this cancels out.
       temporarySpace = temporaryCount + ((temporaryCount + registerParamCount + length calleeSavedRegisters) `rem` 2) + 1
+      paramRegisters' = take registerParamCount paramRegisters
       prologue =
         -- We push %rbp separate from the other registers, because it needs to
         -- be saved before we set the frame pointer.
@@ -220,12 +221,12 @@ generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount
           Lined 0 $ TwacRStatement $ Assign Rsp Rbp
         ]
           ++ map (Lined 0 . Push) (tail calleeSavedRegisters)
-          ++ map (Lined 0 . Push) (take registerParamCount paramRegisters)
+          ++ map (Lined 0 . Push) paramRegisters'
           ++ [ Lined 0 $ AllocateStackSpace temporarySpace,
                Lined 0 $ Load (ParameterV 0) R15
              ]
       epilogue =
-        Lined 0 (DeallocateStackSpace (temporarySpace + length paramRegisters))
+        Lined 0 (DeallocateStackSpace (temporarySpace + length paramRegisters'))
           : map (Lined 0 . Pop) (reverse calleeSavedRegisters)
    in TwacRMethod
         name

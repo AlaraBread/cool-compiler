@@ -226,9 +226,9 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
         TwacR.Pop dst ->
           pure $ instOnly [Pop dst]
         TwacR.AllocateStackSpace words ->
-          pure $ instOnly [AddImmediate (words * 8) TwacR.Rsp]
-        TwacR.DeallocateStackSpace words ->
           pure $ instOnly [SubtractImmediate (words * 8) TwacR.Rsp]
+        TwacR.DeallocateStackSpace words ->
+          pure $ instOnly [AddImmediate (words * 8) TwacR.Rsp]
         TwacR.TwacRStatement twacStatement -> case twacStatement of
           Twac.Add src dst ->
             pure $

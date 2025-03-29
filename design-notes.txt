@@ -62,11 +62,11 @@
 
    object        
   ---------------
-   size
+   size (bytes)
    type tag
    ptr to vtable 
+   &attribute0
    &attribute1   
-   &attribute2   
 
 
 5 activation records

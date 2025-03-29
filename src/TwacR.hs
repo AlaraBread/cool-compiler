@@ -207,8 +207,7 @@ generateTwacR epilogue = concatMap (unsequence . fmap (generateTwacRStatements e
 
 generateTwacRMethod :: TwacMethod Variable -> TwacRMethod
 generateTwacRMethod (TwacMethod name body formals temporaryCount) =
-  let
-      registerParamCount = (min 6 $ 1 + length formals)
+  let registerParamCount = (min 6 $ 1 + length formals)
       memoryParamCount = (max 0 $ 1 - 6 + length formals)
       -- This is always a multiple of 16 bytes, to keep the stack 16-byte aligned.
       temporarySpace = temporaryCount + (temporaryCount + registerParamCount) `rem` 1

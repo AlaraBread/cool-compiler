@@ -4,7 +4,6 @@
 module Trac where
 
 import Control.Monad.State
-import Data.Int (Int32)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import Distribution.Simple.Utils (lowercase)
@@ -21,7 +20,8 @@ data TracIr = TracIr
 
 type TypeDetailsMap = Map.Map InputIr.Type TypeDetails
 
-data TypeDetails = TypeDetails {typeTag :: Int, attributeCount :: Int}
+-- Type size is in words.
+data TypeDetails = TypeDetails {typeTag :: Int, typeSize :: Int}
   deriving (Show)
 
 data TracMethod = TracMethod {methodName :: String, body :: Trac, formals :: [InputIr.Formal], temporaryCount :: Int}
@@ -37,7 +37,7 @@ data TracStatement
   | LessThan Variable Variable Variable
   | LessThanOrEqualTo Variable Variable Variable
   | Equals Variable Variable Variable
-  | IntConstant Variable Int32
+  | IntConstant Variable Int
   | BoolConstant Variable Bool
   | StringConstant Variable String
   | Not Variable Variable
@@ -283,7 +283,6 @@ generateTracExpr
                     ++ bodyTrac
                     ++ [lined whilePredicate $ Jump whileStart]
                     ++ [lined whilePredicate $ TracLabel endLabel]
-                    ++ [lined whilePredicate $ New outV $ InputIr.Type "Object"]
                     ++ [lined whilePredicate $ Default outV $ InputIr.Type "Object"],
                   outV
                 )
@@ -322,7 +321,6 @@ generateTracExpr
 
             let defaultInitializer =
                   [ lined' $ Comment $ InputIr.lexeme bindingName ++ " <- default",
-                    lined' $ New bindingV bindingType,
                     lined' $ Default bindingV bindingType
                   ]
 
@@ -452,7 +450,7 @@ generateTracConstructor selfType attrs = do
             Just e -> do
               (trac, v) <- generateTracExpr attributeMap selfType e
               pure $ trac ++ [Lined line $ Assign (AttributeV idx) v]
-            Nothing -> pure [Lined line $ New (AttributeV idx) attrType, Lined line $ Default (AttributeV idx) attrType]
+            Nothing -> pure [Lined line $ Default (AttributeV idx) attrType]
       )
       (zip attrs [0, 1 ..])
   pure $ concat attrs'
@@ -475,7 +473,7 @@ generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
             { implementationMap = implMap',
               constructorMap = constructorMap,
               typeDetailsMap =
-                snd $ Map.mapAccum (\tag attrs -> (tag + 1, TypeDetails tag (length attrs))) 0 classMap
+                snd $ Map.mapAccum (\tag attrs -> (tag + 1, TypeDetails tag (3 + length attrs))) 0 classMap
             }
     )
     ( Temporary

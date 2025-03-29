@@ -82,7 +82,7 @@ data ExprWithoutLine
   | Equal !(Typed Expr) !(Typed Expr)
   | Not !(Typed Expr)
   | Negate !(Typed Expr)
-  | IntegerConstant !Data.Int.Int32
+  | IntegerConstant !Int
   | StringConstant !String
   | Variable !Identifier
   | BooleanConstant !Bool

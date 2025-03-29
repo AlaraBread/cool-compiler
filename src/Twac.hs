@@ -1,7 +1,6 @@
 module Twac where
 
 import Control.Monad.State
-import Data.Int (Int32)
 import qualified Data.Map.Strict as Map
 import InputIr (Formal, Type)
 import qualified InputIr
@@ -29,7 +28,7 @@ data TwacStatement v
   | LessThan v v
   | LessThanOrEqualTo v v
   | Equals v v
-  | IntConstant Int32 v
+  | IntConstant Int v
   | BoolConstant Bool v
   | StringConstant String v
   | Not v

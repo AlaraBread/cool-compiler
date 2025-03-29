@@ -1,10 +1,11 @@
 import Control.Monad.State
-import Data.Maybe (maybe)
 import qualified Data.Map.Strict as Map
+import Data.Maybe (maybe)
 import Distribution.Compat.CharParsing (CharParsing (string))
 import qualified InputIr
-import Trac (Label (..), Temporary (Temporary), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getVariable)
+import Trac (Label (..), Temporary (Temporary), TypeDetails (TypeDetails, typeSize), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getLabel, getVariable)
 import qualified Twac
+import TwacR (TwacRStatement (TwacRStatement))
 import qualified TwacR
 
 data AssemblyStatement
@@ -19,8 +20,9 @@ data AssemblyStatement
   | Test TwacR.Register TwacR.Register
   | TestConst TwacR.Register Integer
   | Store TwacR.Register Address
+  | StoreConst Int Address
   | Load Address TwacR.Register
-  | LoadConst Integer TwacR.Register
+  | LoadConst Int TwacR.Register
   | Transfer TwacR.Register TwacR.Register
   | Push TwacR.Register
   | Pop TwacR.Register
@@ -41,41 +43,41 @@ data AssemblyStatement
 
 instance Show AssemblyStatement where
   show instruction =
-    let indent = (++) "    " 
+    let indent = (++) "    "
         unary op arg = indent $ op ++ " " ++ show arg
         binary op src dst = indent $ op ++ " " ++ show src ++ " " ++ show dst
-    
-    in case instruction of
-      Add src dst -> binary "addq" src dst
-      AddImmediate src dst -> binary "addq" src dst
-      Subtract src dst -> binary "subq" src dst
-      SubtractImmediate src dst -> binary "subq" src dst
-      Multiply src dst -> binary "imulq" src dst
-      Divide src -> unary "idivq" src
-      Cqto -> "cqto"
-      Cmp src dst -> binary "cmpq" src dst
-      Test src dst -> binary "testq" src dst
-      TestConst src dst -> binary "testq" src dst
-      Store src dst -> binary "movq" src dst
-      Load src dst -> binary "movq" src dst
-      LoadConst src dst -> binary "movq" src dst
-      Transfer src dst -> binary "movq" src dst
-      Push src -> unary "pushq" src
-      Pop dst -> unary "pushq" dst
-      Not dst -> unary "notq" dst
-      Negate dst -> unary "negl" dst
-      AssemblyLabel (Label label) -> label ++ ":"
-      Call label -> unary "call" label
-      DynamicCall label -> unary "call" label
-      Return -> indent "ret"
-      Jump label -> unary "jmp" label
-      JumpZero label -> unary "jz" label
-      JumpNonZero label -> unary "jnz" label
-      JumpLessThan label -> unary "jl" label
-      JumpLessThanEqual label -> unary "jle" label
-      LoadLabel label dst -> binary "movq" label dst
-      JumpAddress addr -> unary "jmp" addr
-      Comment string -> indent $ "## " ++ string
+     in case instruction of
+          Add src dst -> binary "addq" src dst
+          AddImmediate src dst -> binary "addq" src dst
+          Subtract src dst -> binary "subq" src dst
+          SubtractImmediate src dst -> binary "subq" src dst
+          Multiply src dst -> binary "imulq" src dst
+          Divide src -> unary "idivq" src
+          Cqto -> "cqto"
+          Cmp src dst -> binary "cmpq" src dst
+          Test src dst -> binary "testq" src dst
+          TestConst src dst -> binary "testq" src dst
+          Store src dst -> binary "movq" src dst
+          StoreConst src dst -> binary "movq" src dst
+          Load src dst -> binary "movq" src dst
+          LoadConst src dst -> binary "movq" src dst
+          Transfer src dst -> binary "movq" src dst
+          Push src -> unary "pushq" src
+          Pop dst -> unary "pushq" dst
+          Not dst -> unary "notq" dst
+          Negate dst -> unary "negl" dst
+          AssemblyLabel (Label label) -> label ++ ":"
+          Call label -> unary "call" label
+          DynamicCall label -> unary "call" label
+          Return -> indent "ret"
+          Jump label -> unary "jmp" label
+          JumpZero label -> unary "jz" label
+          JumpNonZero label -> unary "jnz" label
+          JumpLessThan label -> unary "jl" label
+          JumpLessThanEqual label -> unary "jle" label
+          LoadLabel label dst -> binary "movq" label dst
+          JumpAddress addr -> unary "jmp" addr
+          Comment string -> indent $ "## " ++ string
 
 data AssemblyData
   = JumpTable Label [Label]
@@ -94,15 +96,15 @@ data Address = Address
   }
 
 instance Show Address where
-  show (Address offset base index scale) = 
+  show (Address offset base index scale) =
     maybe "" show offset
-    ++ "("
-    ++ show base 
-    ++ ","
-    ++ maybe "" show index
-    ++ ","
-    ++ maybe "" show scale
-    ++ ")"
+      ++ "("
+      ++ show base
+      ++ ","
+      ++ maybe "" show index
+      ++ ","
+      ++ maybe "" show scale
+      ++ ")"
 
 data AssemblyIr = AssemblyIr
   { assemblyIrCode :: [AssemblyStatement],
@@ -159,65 +161,150 @@ getAddress registerParamCount variable = case variable of
 attributeAddress :: TwacR.Register -> Int -> Address
 attributeAddress reg n = Address (Just n) reg Nothing Nothing
 
-generateAssemblyStatements :: Int -> TypeDetailsMap -> TwacR.TwacRStatement -> ([AssemblyStatement], [AssemblyData])
+generateAssemblyStatements :: Int -> TypeDetailsMap -> TwacR.TwacRStatement -> State Temporary ([AssemblyStatement], [AssemblyData])
 generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
-  let getAddress' = getAddress registerParamCount
+  let generateAssemblyStatements' = generateAssemblyStatements registerParamCount typeDetailsMap
+      getAddress' = getAddress registerParamCount
       instOnly x = (x, [])
       -- scratch registers
       r1 = TwacR.R10
       r2 = TwacR.R11
    in case twacRStatement of
-        TwacR.Load src dst -> instOnly [Load (getAddress' src) dst]
-        TwacR.Store src dst -> instOnly [Store src (getAddress' dst)]
-        TwacR.Push src -> instOnly [Push src]
-        TwacR.Pop dst -> instOnly [Pop dst]
-        TwacR.AllocateStackSpace words -> instOnly [AddImmediate (words * 8) TwacR.Rsp]
-        TwacR.DeallocateStackSpace words -> instOnly [SubtractImmediate (words * 8) TwacR.Rsp]
+        TwacR.Load src dst ->
+          pure $ instOnly [Load (getAddress' src) dst]
+        TwacR.Store src dst ->
+          pure $ instOnly [Store src (getAddress' dst)]
+        TwacR.Push src ->
+          pure $ instOnly [Push src]
+        TwacR.Pop dst ->
+          pure $ instOnly [Pop dst]
+        TwacR.AllocateStackSpace words ->
+          pure $ instOnly [AddImmediate (words * 8) TwacR.Rsp]
+        TwacR.DeallocateStackSpace words ->
+          pure $ instOnly [SubtractImmediate (words * 8) TwacR.Rsp]
         TwacR.TwacRStatement twacStatement -> case twacStatement of
           Twac.Add src dst ->
-            instOnly
-              [ Load (attributeAddress src 0) r1,
-                Load (attributeAddress dst 0) r2,
-                Add r1 r2,
-                Store r2 (attributeAddress dst 0)
-              ]
+            pure $
+              instOnly
+                [ Load (attributeAddress src 0) r1,
+                  Load (attributeAddress dst 0) r2,
+                  Add r1 r2,
+                  Store r2 (attributeAddress dst 0)
+                ]
           Twac.Subtract src dst ->
-            instOnly
-              [ Load (attributeAddress src 0) r1,
-                Load (attributeAddress dst 0) r2,
-                Subtract r1 r2,
-                Store r2 (attributeAddress dst 0)
-              ]
+            pure $
+              instOnly
+                [ Load (attributeAddress src 0) r1,
+                  Load (attributeAddress dst 0) r2,
+                  Subtract r1 r2,
+                  Store r2 (attributeAddress dst 0)
+                ]
           Twac.Multiply src dst ->
-            instOnly
-              [ Load (attributeAddress src 0) r1,
-                Load (attributeAddress dst 0) r2,
-                Multiply r1 r2,
-                Store r2 (attributeAddress dst 0)
-              ]
+            pure $
+              instOnly
+                [ Load (attributeAddress src 0) r1,
+                  Load (attributeAddress dst 0) r2,
+                  Multiply r1 r2,
+                  Store r2 (attributeAddress dst 0)
+                ]
           Twac.Divide src dst ->
-            instOnly
-              [ Cqto,
-                Divide src,
-                Store TwacR.Rax (attributeAddress dst 0)
-              ]
-          Twac.LessThan src dst -> undefined
-          Twac.LessThanOrEqualTo src dst -> undefined
-          Twac.Equals src dst -> undefined
-          Twac.IntConstant i dst -> undefined
-          Twac.BoolConstant i dst -> undefined
-          Twac.StringConstant i dst -> undefined
-          Twac.Not dst -> undefined
-          Twac.Negate dst -> undefined
-          Twac.New type' dst -> undefined
-          Twac.Default type' dst -> undefined
+            pure $
+              instOnly
+                [ Cqto,
+                  Divide src,
+                  Store TwacR.Rax (attributeAddress dst 0)
+                ]
+          Twac.LessThan src dst -> do
+            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") r1
+            setting <- setBool r1 JumpLessThan
+            pure $ instOnly $ construction ++ [Cmp src dst] ++ setting ++ [Transfer r1 dst]
+          Twac.LessThanOrEqualTo src dst -> do
+            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") r1
+            setting <- setBool r1 JumpLessThanEqual
+            pure $ instOnly $ construction ++ [Cmp src dst] ++ setting ++ [Transfer r1 dst]
+          Twac.Equals src dst -> do
+            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") r1
+            setting <- setBool r1 JumpZero
+            pure $ instOnly $ construction ++ [Cmp src dst] ++ setting ++ [Transfer r1 dst]
+          Twac.IntConstant i dst -> do
+            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Int") dst
+            pure $ instOnly $ construction ++ [LoadConst i r1, Store r1 (attributeAddress dst 0)]
+          Twac.BoolConstant b dst -> do
+            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Int") dst
+            pure $ instOnly $ construction ++ [LoadConst (if b then -1 else 0) r1, Store r1 (attributeAddress dst 0)]
+          Twac.StringConstant s dst -> undefined
+          Twac.Not dst ->
+            pure $ instOnly [Not dst]
+          Twac.Negate dst ->
+            pure $ instOnly [Negate dst]
+          -- TODO: set vtable pointer
+          Twac.New type' dst ->
+            let (TypeDetails tag size) = typeDetailsMap Map.! type'
+             in pure $
+                  instOnly $
+                    calloc size
+                      ++ [ Transfer TwacR.Rax dst,
+                           -- accessing negative attributes is a cursed, but
+                           -- correct way of doing this.
+                           StoreConst size (attributeAddress dst $ -3),
+                           StoreConst tag (attributeAddress dst $ -2)
+                         ]
+          Twac.Default type' dst ->
+            let delegateToNew = generateAssemblyStatements' $ TwacRStatement $ Twac.New type' dst
+             in case type' of
+                  -- Int, Bool, String all have special default handling.
+                  -- However, this special handling happens to do the exact same
+                  -- thing as New. So, let us just generate assembly for that,
+                  -- so we do not have to do the fiddly bit twice :).
+                  InputIr.Type "Int" -> delegateToNew
+                  InputIr.Type "Bool" -> delegateToNew
+                  InputIr.Type "String" -> delegateToNew
+                  typeOther -> pure $ instOnly [LoadConst 0 dst]
           Twac.IsVoid dst -> undefined
           Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs -> undefined
-          Twac.Jump label -> instOnly [Jump label]
-          Twac.TwacLabel label -> instOnly [AssemblyLabel label]
-          Twac.Return _ -> instOnly [Return]
-          Twac.Comment string -> instOnly [Comment string]
-          Twac.ConditionalJump cond label -> undefined
-          Twac.Assign src dst -> instOnly [Transfer src dst]
+          Twac.Jump label ->
+            pure $ instOnly [Jump label]
+          Twac.TwacLabel label ->
+            pure $ instOnly [AssemblyLabel label]
+          Twac.Return _ ->
+            pure $ instOnly [Return]
+          Twac.Comment string ->
+            pure $ instOnly [Comment string]
+          Twac.ConditionalJump cond label ->
+            pure $
+              instOnly
+                [ Load (attributeAddress cond 0) r1,
+                  Test r1 r1,
+                  JumpNonZero label
+                ]
+          Twac.Assign src dst ->
+            pure $ instOnly [Transfer src dst]
           Twac.TwacCase condition jmpTable -> undefined
           Twac.Abort line string -> undefined
+
+-- Inspired by the reference compiler output, though there really is just about
+-- one way to do this. Using calloc instead of malloc means we can save the
+-- multiply/bit shift for libc instead of doing it ourselves, and that makes us
+-- happy.
+calloc :: Int -> [AssemblyStatement]
+calloc words =
+  [ LoadConst 8 TwacR.Rsi,
+    LoadConst words TwacR.Rdi,
+    Call $ Label "calloc"
+  ]
+
+-- Sets a boolean based on a conditional jump passed in. If the conditional jump
+-- occurs, we set the boolean to true; otherwise, we leave it as false. Note, we
+-- spill %r11.
+setBool :: TwacR.Register -> (Label -> AssemblyStatement) -> State Temporary [AssemblyStatement]
+setBool boolReg conditionalJump = do
+  trueLabel <- getLabel
+  falseLabel <- getLabel
+  pure
+    [ conditionalJump trueLabel,
+      Jump falseLabel,
+      AssemblyLabel trueLabel,
+      LoadConst (-1) TwacR.R11,
+      Store TwacR.R11 (attributeAddress boolReg 0),
+      AssemblyLabel falseLabel
+    ]

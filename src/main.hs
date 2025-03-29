@@ -26,7 +26,6 @@ main = do
   let (InputIr classMap _ parentMap _) = inputIr
   let pickLowestParents' = pickLowestParents classMap parentMap
 
-
   putStrLn "Main.main Trac: "
   let (tracIr, temporaryState) = generateTrac inputIr
   let (TracIr tracImpMap _ _) = tracIr

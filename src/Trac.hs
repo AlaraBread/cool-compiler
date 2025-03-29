@@ -470,7 +470,20 @@ generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
             { implementationMap = implMap',
               constructorMap = constructorMap,
               typeDetailsMap =
-                snd $ Map.mapAccum (\tag attrs -> (tag + 1, TypeDetails tag (3 + length attrs))) 0 classMap
+                snd $
+                  Map.mapAccumWithKey
+                    ( \tag type' attrs ->
+                        ( tag + 1,
+                          TypeDetails tag $
+                            case type' of
+                              InputIr.Type "Int" -> 4
+                              InputIr.Type "Bool" -> 4
+                              InputIr.Type "String" -> undefined
+                              _ -> (3 + length attrs)
+                        )
+                    )
+                    0
+                    classMap
             }
     )
     ( Temporary

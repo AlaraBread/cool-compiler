@@ -62,6 +62,8 @@
 
    object        
   ---------------
+   size
+   type tag
    ptr to vtable 
    &attribute1   
    &attribute2   
@@ -76,18 +78,19 @@
   --------------------
    parameter n        
    ...                
-   parameter 7        
+   parameter 6        
   --------------------
    callee’s           
   --------------------
    return address     
    saved rbp          
    callee saved regs  
-   parameter 1
+   parameter 0
    ...
-   parameter (up to) 6
+   parameter (up to) 5
    temporaries        
 
+  We always keep &self in r15 as well.
 
 5.1 function parameters
 ~~~~~~~~~~~~~~~~~~~~~~~

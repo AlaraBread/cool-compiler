@@ -12,7 +12,16 @@ import InputIr (Method (methodFormals))
 import qualified InputIr
 import Util
 
-data TracIr = TracIr {implementationMap :: Map.Map InputIr.Type [TracMethod], constructorMap :: Map.Map InputIr.Type Trac}
+data TracIr = TracIr
+  { implementationMap :: Map.Map InputIr.Type [TracMethod],
+    constructorMap :: Map.Map InputIr.Type Trac,
+    typeDetailsMap :: TypeDetailsMap
+  }
+  deriving (Show)
+
+type TypeDetailsMap = Map.Map InputIr.Type TypeDetails
+
+data TypeDetails = TypeDetails {typeTag :: Int, attributeCount :: Int}
   deriving (Show)
 
 data TracMethod = TracMethod {methodName :: String, body :: Trac, formals :: [InputIr.Formal], temporaryCount :: Int}
@@ -459,7 +468,13 @@ generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
               )
             $ Map.map (map snd) implMap
         constructorMap <- Map.traverseWithKey generateTracConstructor classMap
-        pure TracIr {implementationMap = implMap', constructorMap = constructorMap}
+        pure
+          TracIr
+            { implementationMap = implMap',
+              constructorMap = constructorMap,
+              typeDetailsMap =
+                snd $ Map.mapAccum (\tag attrs -> (tag + 1, TypeDetails tag (length attrs))) 0 classMap
+            }
     )
     ( Temporary
         0

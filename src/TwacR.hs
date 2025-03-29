@@ -4,11 +4,15 @@ import Control.Exception (assert)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import InputIr (Formal, Type)
-import Trac (Variable)
+import Trac (TypeDetailsMap, Variable (ParameterV))
 import Twac
 import Util
 
-data TwacRIr = TwacRIr {implementationMap :: Map.Map Type [TwacRMethod], constructorMap :: Map.Map Type TwacR}
+data TwacRIr = TwacRIr
+  { implementationMap :: Map.Map Type [TwacRMethod],
+    constructorMap :: Map.Map Type TwacR,
+    typeDetailsMap :: TypeDetailsMap
+  }
 
 data TwacRMethod = TwacRMethod {methodName :: String, body :: TwacR, registerParamCount :: Int, stackParamCount :: Int}
 
@@ -57,7 +61,10 @@ reservedRegisters =
     [ Rsp, -- stack pointer
       Rbp, -- frame pointer
       Rax, -- needed for division
-      Rdx -- needed for division
+      Rdx, -- needed for division
+      R15, -- &self. Intentionally callee-saved and otherwise uninteresting.
+      R10, -- scratch register for codegen
+      R11 -- scratch register for codegen
     ]
 
 freeRegisters = Set.difference allRegisters reservedRegisters
@@ -176,7 +183,9 @@ generateTwacRMethod (TwacMethod name body formals temporaryCount) =
       prologue =
         map (Lined 0 . Push) calleeSavedRegisters
           ++ map (Lined 0 . Push) paramRegisters
-          ++ [Lined 0 $ AllocateStackSpace temporarySpace]
+          ++ [ Lined 0 $ AllocateStackSpace temporarySpace,
+               Lined 0 $ Load (ParameterV 0) R15
+             ]
       epilogue =
         Lined 0 (DeallocateStackSpace (temporarySpace + length paramRegisters))
           : map (Lined 0 . Pop) (reverse calleeSavedRegisters)
@@ -187,6 +196,6 @@ generateTwacRMethod (TwacMethod name body formals temporaryCount) =
         (max 0 $ 1 - 6 + length formals)
 
 generateTwacRIr :: TwacIIr -> TwacRIr
-generateTwacRIr (TwacIr impMap constructorMap) =
+generateTwacRIr (TwacIr impMap constructorMap typeDetailsMap) =
   let gen = generateTwacRStatements [] freeRegisters
-   in TwacRIr (fmap (fmap generateTwacRMethod) impMap) (fmap (generateTwacR []) constructorMap)
+   in TwacRIr (fmap (fmap generateTwacRMethod) impMap) (fmap (generateTwacR []) constructorMap) typeDetailsMap

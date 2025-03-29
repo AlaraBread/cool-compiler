@@ -1,14 +1,17 @@
 import Control.Monad.State
 import Data.Map (mapWithKey)
 import qualified Data.Map.Strict as Map
+import Distribution.Compat.CharParsing (CharParsing (string))
 import qualified InputIr
-import Trac (Label (..), Temporary (Temporary), Variable (AttributeV, ParameterV, TemporaryV), getVariable)
+import Trac (Label (..), Temporary (Temporary), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getVariable)
 import qualified Twac
 import qualified TwacR
 
 data AssemblyStatement
   = Add TwacR.Register TwacR.Register
+  | AddImmediate Int TwacR.Register
   | Subtract TwacR.Register TwacR.Register
+  | SubtractImmediate Int TwacR.Register
   | Multiply TwacR.Register TwacR.Register
   | Divide TwacR.Register
   | Cqto
@@ -46,10 +49,10 @@ data AssemblyData
       }
 
 data Address = Address
-  { addressOffset :: Maybe Integer,
+  { addressOffset :: Maybe Int,
     addressBase :: Maybe TwacR.Register,
     addressIndex :: Maybe TwacR.Register,
-    addressScale :: Maybe Integer
+    addressScale :: Maybe Int
   }
 
 data AssemblyIr = AssemblyIr
@@ -67,60 +70,105 @@ generateAssembly TwacR.TwacRIr {TwacR.implementationMap, TwacR.constructorMap} =
 generateAssemblyMethod :: InputIr.Type -> TwacR.TwacRMethod -> [AssemblyStatement]
 generateAssemblyMethod = undefined
 
-temporaryToAddress :: Temporary -> Address
-temporaryToAddress (Temporary t) =
-  Address
-    { addressOffset = Just $ 8 * toInteger t,
-      addressBase = Just TwacR.Rbp,
-      addressIndex = Nothing,
-      addressScale = Nothing
-    }
+-- Let n be the number of arguments.
+-- Let r be the number of register arguments.
+-- Let t be the number of temporaries.
 
-parameterToRegister :: Int -> TwacR.Register
-parameterToRegister p = [TwacR.Rdi, TwacR.Rsi, TwacR.Rdx, TwacR.Rcx, TwacR.R8, TwacR.R9] !! p
+-- Stack Layout
+--   8(n-6)+16(%rbp) | argument n
+--                   | ...
+--          24(%rbp) | argument 7
+--          16(%rbp) | argument 6
+--                   | --------------------
+--           8(%rbp) | saved return address
+--            (%rbp) | saved %rbp
+--          -8(%rbp) | saved %rbx
+--         -16(%rbp) | saved %rsp
+--         -24(%rbp) | saved %r12
+--         -32(%rbp) | saved %r13
+--         -40(%rbp) | saved %r14
+--         -48(%rbp) | saved %r15
+--         -56(%rbp) | argument 0
+--                   | ...
+--      -8r-56(%rbp) | argument r
+--      -8r-64(%rbp) | temporary 0
+--                   | ...
+--  -8(r+t)-64(%rbp) | temporary t
 
+getAddress :: Int -> Variable -> Address
+getAddress registerParamCount variable = case variable of
+  TemporaryV t ->
+    Address (Just $ -8 * (registerParamCount + t) - 64) (Just TwacR.Rbp) Nothing Nothing
+  AttributeV n ->
+    Address (Just $ (3 + n) * 8) (Just TwacR.R15) Nothing Nothing
+  ParameterV n ->
+    if n < 6
+      then Address (Just $ -8 * n - 56) (Just TwacR.Rbp) Nothing Nothing
+      else Address (Just $ 8 * (n - 6) + 16) (Just TwacR.Rbp) Nothing Nothing
+
+-- Gives the address of the nth attribute pointed to by the given register
 attributeAddress :: TwacR.Register -> Int -> Address
-attributeAddress objectRegister a =
-  Address
-    { addressOffset = Just $ 8 * toInteger a,
-      addressBase = Just objectRegister,
-      addressIndex = Nothing,
-      addressScale = Nothing
-    }
+attributeAddress reg n = Address (Just n) (Just reg) Nothing Nothing
 
--- this relies on rdi always having a pointer to self
-selfAttributeAddress :: Int -> Address
-selfAttributeAddress = attributeAddress TwacR.Rdi
-
-generateAssemblyStatements :: TwacR.TwacRStatement -> [AssemblyStatement]
-generateAssemblyStatements twacRStatement =
-  case twacRStatement of
-    TwacR.Load variable register ->
-      case variable of
-        TemporaryV t -> [Load (temporaryToAddress t) register]
-        ParameterV p -> [Transfer (parameterToRegister p) register]
-        AttributeV a -> [Load (selfAttributeAddress a) register]
-    TwacR.Store register variable ->
-      case variable of
-        TemporaryV t -> [Store register (temporaryToAddress t)]
-        ParameterV p -> [Transfer register (parameterToRegister p)]
-        AttributeV a -> [Store register (selfAttributeAddress a)]
-    TwacR.TwacRStatement (Twac.New t register) -> []
-    TwacR.TwacRStatement
-      Twac.Dispatch
-        { Twac.dispatchResult,
-          Twac.dispatchMethod,
-          Twac.dispatchArgs,
-          Twac.dispatchReceiver,
-          Twac.dispatchReceiverType,
-          Twac.dispatchType
-        } ->
-        case dispatchType of
-          Just (InputIr.Type t) ->
-            -- static dispatch
-            [ Call $ Label $ t ++ "@" ++ dispatchMethod,
-              Transfer TwacR.Rax dispatchResult
-            ]
-          Nothing ->
-            -- dynamic dispatch
-            []
+generateAssemblyStatements :: Int -> TypeDetailsMap -> TwacR.TwacRStatement -> ([AssemblyStatement], [AssemblyData])
+generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
+  let getAddress' = getAddress registerParamCount
+      instOnly x = (x, [])
+      -- scratch registers
+      r1 = TwacR.R10
+      r2 = TwacR.R11
+   in case twacRStatement of
+        TwacR.Load src dst -> instOnly [Load (getAddress' src) dst]
+        TwacR.Store src dst -> instOnly [Store src (getAddress' dst)]
+        TwacR.Push src -> instOnly [Push src]
+        TwacR.Pop dst -> instOnly [Pop dst]
+        TwacR.AllocateStackSpace words -> instOnly [AddImmediate (words * 8) TwacR.Rsp]
+        TwacR.DeallocateStackSpace words -> instOnly [SubtractImmediate (words * 8) TwacR.Rsp]
+        TwacR.TwacRStatement twacStatement -> case twacStatement of
+          Twac.Add src dst ->
+            instOnly
+              [ Load (attributeAddress src 0) r1,
+                Load (attributeAddress dst 0) r2,
+                Add r1 r2,
+                Store r2 (attributeAddress dst 0)
+              ]
+          Twac.Subtract src dst ->
+            instOnly
+              [ Load (attributeAddress src 0) r1,
+                Load (attributeAddress dst 0) r2,
+                Subtract r1 r2,
+                Store r2 (attributeAddress dst 0)
+              ]
+          Twac.Multiply src dst ->
+            instOnly
+              [ Load (attributeAddress src 0) r1,
+                Load (attributeAddress dst 0) r2,
+                Multiply r1 r2,
+                Store r2 (attributeAddress dst 0)
+              ]
+          Twac.Divide src dst ->
+            instOnly
+              [ Cqto,
+                Divide src,
+                Store TwacR.Rax (attributeAddress dst 0)
+              ]
+          Twac.LessThan src dst -> undefined
+          Twac.LessThanOrEqualTo src dst -> undefined
+          Twac.Equals src dst -> undefined
+          Twac.IntConstant i dst -> undefined
+          Twac.BoolConstant i dst -> undefined
+          Twac.StringConstant i dst -> undefined
+          Twac.Not dst -> undefined
+          Twac.Negate dst -> undefined
+          Twac.New type' dst -> undefined
+          Twac.Default type' dst -> undefined
+          Twac.IsVoid dst -> undefined
+          Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs -> undefined
+          Twac.Jump label -> instOnly [Jump label]
+          Twac.TwacLabel label -> instOnly [AssemblyLabel label]
+          Twac.Return _ -> instOnly [Return]
+          Twac.Comment string -> instOnly [Comment string]
+          Twac.ConditionalJump cond label -> undefined
+          Twac.Assign src dst -> instOnly [Transfer src dst]
+          Twac.TwacCase condition jmpTable -> undefined
+          Twac.Abort line string -> undefined

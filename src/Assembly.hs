@@ -117,29 +117,31 @@ data AssemblyIr = AssemblyIr
 instance Show AssemblyIr where
   show (AssemblyIr code data') = unlines (map show code)
 
--- TODO: actually generate constructors... 
+-- TODO: actually generate constructors...
 generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
-generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.constructorMap, TwacR.typeDetailsMap} = evalState
-    (do
-      let methodList = map snd $ Map.toList implementationMap
-      x <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
-      let (code, data') = traverse combineAssembly x
-      pure $ AssemblyIr code (concat data')
+generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.constructorMap, TwacR.typeDetailsMap} =
+  evalState
+    ( do
+        let methodList = map snd $ Map.toList implementationMap
+        x <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
+        let (code, data') = traverse combineAssembly x
+        pure $ AssemblyIr code (concat data')
     )
     temporaryState
 
 generateAssemblyMethod :: TypeDetailsMap -> TwacR.TwacRMethod -> State Temporary ([AssemblyStatement], [AssemblyData])
 generateAssemblyMethod typeDetailsMap method = do
-  lines <- traverse
-    (generateAssemblyStatements (TwacR.registerParamCount method) typeDetailsMap . item)
-    (TwacR.body method)
+  lines <-
+    traverse
+      (generateAssemblyStatements (TwacR.registerParamCount method) typeDetailsMap . item)
+      (TwacR.body method)
   pure $ combineAssembly lines
 
 combineAssembly :: [([AssemblyStatement], [AssemblyData])] -> ([AssemblyStatement], [AssemblyData])
-combineAssembly asm = let
-    statements = concatMap fst asm
-    data' = concatMap snd asm
-  in (statements, data')
+combineAssembly asm =
+  let statements = concatMap fst asm
+      data' = concatMap snd asm
+   in (statements, data')
 
 -- Let n be the number of arguments.
 -- Let r be the number of register arguments.
@@ -169,12 +171,12 @@ combineAssembly asm = let
 getAddress :: Int -> Variable -> Address
 getAddress registerParamCount variable = case variable of
   TemporaryV t ->
-    Address (Just $ -8 * (registerParamCount + t) - 64) TwacR.Rbp Nothing Nothing
+    Address (Just $ (-8) * (registerParamCount + t) - 64) TwacR.Rbp Nothing Nothing
   AttributeV n ->
     Address (Just $ (3 + n) * 8) TwacR.R15 Nothing Nothing
   ParameterV n ->
     if n < 6
-      then Address (Just $ -8 * n - 56) TwacR.Rbp Nothing Nothing
+      then Address (Just $ (-8) * n - 56) TwacR.Rbp Nothing Nothing
       else Address (Just $ 8 * (n - 6) + 16) TwacR.Rbp Nothing Nothing
 
 -- Gives the address of the nth attribute pointed to by the given register
@@ -281,7 +283,10 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                   InputIr.Type "Bool" -> delegateToNew
                   InputIr.Type "String" -> delegateToNew
                   typeOther -> pure $ instOnly [LoadConst 0 dst]
-          Twac.IsVoid dst -> undefined
+          Twac.IsVoid dst -> do
+            (new, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") dst
+            -- after new, the allocated object is in Rax
+            pure $ instOnly (new ++ [StoreConst 1 $ attributeAddress TwacR.Rax 0])
           -- TODO: make this not *incredibly* janky, lol
           Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs -> undefined
           Twac.Jump label ->

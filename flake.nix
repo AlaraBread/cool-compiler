@@ -19,7 +19,12 @@
       devShells = forAllSystems (system: {
         default = let pkgs = nixpkgsFor.${system};
         in pkgs.mkShell {
-          buildInputs = with pkgs; [ haskell.compiler.ghc810 haskell-language-server ormolu ];
+          buildInputs = with pkgs; [
+            haskell.compiler.ghc810
+            haskell-language-server
+            ormolu
+            glibc.static
+          ];
         };
       });
     };

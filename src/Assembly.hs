@@ -61,6 +61,7 @@ instance Show AssemblyStatement where
           Cmp src dst -> binary "cmpq" src dst
           Test src dst -> binary "testq" src dst
           TestConst src dst -> binary "testq" src dst
+          CmpConst src dst -> binary "cmpq" src dst
           Store src dst -> binary "movq" src dst
           StoreConst src dst -> binary "movq" src dst
           Load src dst -> binary "movq" src dst

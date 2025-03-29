@@ -1,5 +1,5 @@
 import Control.Monad.State
-import Data.Map (mapWithKey)
+import Data.Maybe (maybe)
 import qualified Data.Map.Strict as Map
 import Distribution.Compat.CharParsing (CharParsing (string))
 import qualified InputIr
@@ -36,8 +36,46 @@ data AssemblyStatement
   | JumpLessThan Label
   | JumpLessThanEqual Label
   | LoadLabel Label TwacR.Register
-  | JumpIndirect TwacR.Register
+  | JumpAddress Address
   | Comment String
+
+instance Show AssemblyStatement where
+  show instruction =
+    let indent = (++) "    " 
+        unary op arg = indent $ op ++ " " ++ show arg
+        binary op src dst = indent $ op ++ " " ++ show src ++ " " ++ show dst
+    
+    in case instruction of
+      Add src dst -> binary "addq" src dst
+      AddImmediate src dst -> binary "addq" src dst
+      Subtract src dst -> binary "subq" src dst
+      SubtractImmediate src dst -> binary "subq" src dst
+      Multiply src dst -> binary "imulq" src dst
+      Divide src -> unary "idivq" src
+      Cqto -> "cqto"
+      Cmp src dst -> binary "cmpq" src dst
+      Test src dst -> binary "testq" src dst
+      TestConst src dst -> binary "testq" src dst
+      Store src dst -> binary "movq" src dst
+      Load src dst -> binary "movq" src dst
+      LoadConst src dst -> binary "movq" src dst
+      Transfer src dst -> binary "movq" src dst
+      Push src -> unary "pushq" src
+      Pop dst -> unary "pushq" dst
+      Not dst -> unary "notq" dst
+      Negate dst -> unary "negl" dst
+      AssemblyLabel (Label label) -> label ++ ":"
+      Call label -> unary "call" label
+      DynamicCall label -> unary "call" label
+      Return -> indent "ret"
+      Jump label -> unary "jmp" label
+      JumpZero label -> unary "jz" label
+      JumpNonZero label -> unary "jnz" label
+      JumpLessThan label -> unary "jl" label
+      JumpLessThanEqual label -> unary "jle" label
+      LoadLabel label dst -> binary "movq" label dst
+      JumpAddress addr -> unary "jmp" addr
+      Comment string -> indent $ "## " ++ string
 
 data AssemblyData
   = JumpTable Label [Label]
@@ -50,10 +88,21 @@ data AssemblyData
 
 data Address = Address
   { addressOffset :: Maybe Int,
-    addressBase :: Maybe TwacR.Register,
+    addressBase :: TwacR.Register,
     addressIndex :: Maybe TwacR.Register,
     addressScale :: Maybe Int
   }
+
+instance Show Address where
+  show (Address offset base index scale) = 
+    maybe "" show offset
+    ++ "("
+    ++ show base 
+    ++ ","
+    ++ maybe "" show index
+    ++ ","
+    ++ maybe "" show scale
+    ++ ")"
 
 data AssemblyIr = AssemblyIr
   { assemblyIrCode :: [AssemblyStatement],
@@ -98,17 +147,17 @@ generateAssemblyMethod = undefined
 getAddress :: Int -> Variable -> Address
 getAddress registerParamCount variable = case variable of
   TemporaryV t ->
-    Address (Just $ -8 * (registerParamCount + t) - 64) (Just TwacR.Rbp) Nothing Nothing
+    Address (Just $ -8 * (registerParamCount + t) - 64) TwacR.Rbp Nothing Nothing
   AttributeV n ->
-    Address (Just $ (3 + n) * 8) (Just TwacR.R15) Nothing Nothing
+    Address (Just $ (3 + n) * 8) TwacR.R15 Nothing Nothing
   ParameterV n ->
     if n < 6
-      then Address (Just $ -8 * n - 56) (Just TwacR.Rbp) Nothing Nothing
-      else Address (Just $ 8 * (n - 6) + 16) (Just TwacR.Rbp) Nothing Nothing
+      then Address (Just $ -8 * n - 56) TwacR.Rbp Nothing Nothing
+      else Address (Just $ 8 * (n - 6) + 16) TwacR.Rbp Nothing Nothing
 
 -- Gives the address of the nth attribute pointed to by the given register
 attributeAddress :: TwacR.Register -> Int -> Address
-attributeAddress reg n = Address (Just n) (Just reg) Nothing Nothing
+attributeAddress reg n = Address (Just n) reg Nothing Nothing
 
 generateAssemblyStatements :: Int -> TypeDetailsMap -> TwacR.TwacRStatement -> ([AssemblyStatement], [AssemblyData])
 generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =

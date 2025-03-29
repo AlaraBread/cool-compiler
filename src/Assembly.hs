@@ -1,3 +1,5 @@
+module Assembly where
+
 import Control.Monad.State
 import qualified Data.Map.Strict as Map
 import Data.Maybe (maybe)
@@ -7,6 +9,7 @@ import Trac (Label (..), Temporary (Temporary), TypeDetails (TypeDetails, typeSi
 import qualified Twac
 import TwacR (TwacRStatement (TwacRStatement))
 import qualified TwacR
+import Util
 
 data AssemblyStatement
   = Add TwacR.Register TwacR.Register
@@ -111,15 +114,32 @@ data AssemblyIr = AssemblyIr
     assemblyIrData :: [AssemblyData]
   }
 
-generateAssembly :: TwacR.TwacRIr -> AssemblyIr
-generateAssembly TwacR.TwacRIr {TwacR.implementationMap, TwacR.constructorMap} =
-  AssemblyIr
-    { assemblyIrCode = concat $ Map.mapWithKey (concatMap . generateAssemblyMethod) implementationMap,
-      assemblyIrData = undefined
-    }
+instance Show AssemblyIr where
+  show (AssemblyIr code data') = unlines (map show code)
 
-generateAssemblyMethod :: InputIr.Type -> TwacR.TwacRMethod -> [AssemblyStatement]
-generateAssemblyMethod = undefined
+-- TODO: actually generate constructors... 
+generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
+generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.constructorMap, TwacR.typeDetailsMap} = evalState
+    (do
+      let methodList = map snd $ Map.toList implementationMap
+      x <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
+      let (code, data') = traverse combineAssembly x
+      pure $ AssemblyIr code (concat data')
+    )
+    temporaryState
+
+generateAssemblyMethod :: TypeDetailsMap -> TwacR.TwacRMethod -> State Temporary ([AssemblyStatement], [AssemblyData])
+generateAssemblyMethod typeDetailsMap method = do
+  lines <- traverse
+    (generateAssemblyStatements (TwacR.registerParamCount method) typeDetailsMap . item)
+    (TwacR.body method)
+  pure $ combineAssembly lines
+
+combineAssembly :: [([AssemblyStatement], [AssemblyData])] -> ([AssemblyStatement], [AssemblyData])
+combineAssembly asm = let
+    statements = concatMap fst asm
+    data' = concatMap snd asm
+  in (statements, data')
 
 -- Let n be the number of arguments.
 -- Let r be the number of register arguments.
@@ -238,6 +258,7 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
           Twac.Negate dst ->
             pure $ instOnly [Negate dst]
           -- TODO: set vtable pointer
+          -- TODO: deal with SELF_TYPE, somehow (look at type tag of self?)
           Twac.New type' dst ->
             let (TypeDetails tag size) = typeDetailsMap Map.! type'
              in pure $
@@ -261,6 +282,7 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                   InputIr.Type "String" -> delegateToNew
                   typeOther -> pure $ instOnly [LoadConst 0 dst]
           Twac.IsVoid dst -> undefined
+          -- TODO: make this not *incredibly* janky, lol
           Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs -> undefined
           Twac.Jump label ->
             pure $ instOnly [Jump label]

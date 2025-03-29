@@ -9,6 +9,7 @@ import System.Directory.Internal.Prelude (getArgs)
 import Trac
 import Twac
 import TwacR
+import Assembly
 
 -- Takes an input file name and gives us an output file name.
 outputFile :: String -> String
@@ -49,3 +50,7 @@ main = do
   let TwacRMethod _ body _ _ =
         head $ Prelude.filter (\m -> TwacR.methodName m == "main") mainClassMethods
   putStrLn $ showTwac body
+
+  putStrLn "asm: "
+  let twacAsmIr = generateAssembly temporaryState' twacRIr
+  print twacAsmIr

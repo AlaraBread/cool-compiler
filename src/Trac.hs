@@ -423,7 +423,7 @@ generateTracMethod attributes type' (InputIr.Method {InputIr.methodName, InputIr
   let bindingMap = Map.union paramMap attributeMap
 
   (trac, v) <- generateTracExpr bindingMap type' methodBody
-  temporaryCount <- gets (\(Temporary l t) -> t)
+  temporaryCount' <- gets (\(Temporary l t) -> t)
   let InputIr.Type typeName = type'
   pure
     TracMethod
@@ -433,7 +433,7 @@ generateTracMethod attributes type' (InputIr.Method {InputIr.methodName, InputIr
             : trac
             ++ [Lined (InputIr.line methodName) $ Return v],
         formals = methodFormals,
-        temporaryCount = temporaryCount
+        temporaryCount = temporaryCount'
       }
 
 generateTracConstructor :: InputIr.Type -> [InputIr.Attribute] -> State Temporary Trac

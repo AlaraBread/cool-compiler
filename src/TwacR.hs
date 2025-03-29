@@ -29,6 +29,16 @@ data TwacRStatement
     AllocateStackSpace Int
   | DeallocateStackSpace Int
 
+instance Show TwacRStatement where
+  show twacRStatement = case twacRStatement of
+    TwacRStatement twacStatement -> show twacStatement
+    Load src dst -> show dst ++ " <- " ++ show src
+    Store src dst -> show dst ++ " <- " ++ show src
+    Push src -> "push " ++ show src
+    Pop dst -> "pop " ++ show dst
+    AllocateStackSpace n -> "allocate " ++ show n
+    DeallocateStackSpace n -> "deallocate " ++ show n
+
 data Register
   = Rax
   | Rbx
@@ -46,7 +56,26 @@ data Register
   | R13
   | R14
   | R15
-  deriving (Show, Eq, Ord)
+  deriving (Eq, Ord)
+
+instance Show Register where
+  show reg = case reg of
+    Rax -> "%rax"
+    Rbx -> "%rbx"
+    Rcx -> "%rcx"
+    Rdx -> "%rdx"
+    Rsi -> "%rsi"
+    Rdi -> "%rdi"
+    Rsp -> "%rsp"
+    Rbp -> "%rbp"
+    R8 -> "%r8"
+    R9 -> "%r9"
+    R10 -> "%r10"
+    R11 -> "%r11"
+    R12 -> "%r12"
+    R13 -> "%r13"
+    R14 -> "%r14"
+    R15 -> "%r15"
 
 allRegisters = Set.fromList [Rax, Rbx, Rcx, Rdx, Rsi, Rsp, Rbp, R8, R9, R10, R11, R12, R13, R14, R15]
 
@@ -178,11 +207,14 @@ generateTwacR epilogue = concatMap (unsequence . fmap (generateTwacRStatements e
 
 generateTwacRMethod :: TwacMethod Variable -> TwacRMethod
 generateTwacRMethod (TwacMethod name body formals temporaryCount) =
-  let -- This is always a multiple of 16 bytes, to keep the stack 16-byte aligned.
-      temporarySpace = temporaryCount + (temporaryCount + length paramRegisters) `rem` 1
+  let
+      registerParamCount = (min 6 $ 1 + length formals)
+      memoryParamCount = (max 0 $ 1 - 6 + length formals)
+      -- This is always a multiple of 16 bytes, to keep the stack 16-byte aligned.
+      temporarySpace = temporaryCount + (temporaryCount + registerParamCount) `rem` 1
       prologue =
         map (Lined 0 . Push) calleeSavedRegisters
-          ++ map (Lined 0 . Push) paramRegisters
+          ++ map (Lined 0 . Push) (take registerParamCount paramRegisters)
           ++ [ Lined 0 $ AllocateStackSpace temporarySpace,
                Lined 0 $ Load (ParameterV 0) R15
              ]
@@ -192,8 +224,8 @@ generateTwacRMethod (TwacMethod name body formals temporaryCount) =
    in TwacRMethod
         name
         (prologue ++ generateTwacR epilogue body)
-        (min 6 $ 1 + length formals)
-        (max 0 $ 1 - 6 + length formals)
+        registerParamCount
+        memoryParamCount
 
 generateTwacRIr :: TwacIIr -> TwacRIr
 generateTwacRIr (TwacIr impMap constructorMap typeDetailsMap) =

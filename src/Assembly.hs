@@ -94,6 +94,11 @@ data AssemblyData
         vTableMethods :: [Label]
       }
 
+-- TODO: handle the other types of data (not needed for PA3c3)
+instance Show AssemblyData where
+  show data' = case data' of
+    StringConstant label text -> show label ++ ": .string \"" ++ text ++ "\""
+
 data Address = Address
   { addressOffset :: Maybe Int,
     addressBase :: TwacR.Register
@@ -111,21 +116,39 @@ data AssemblyIr = AssemblyIr
     assemblyIrData :: [AssemblyData]
   }
 
--- TODO: Actually show data, don't just shove main at the beginning.
+-- TODO: don't just shove main at the beginning.
 instance Show AssemblyIr where
-  show (AssemblyIr code data') = ".globl main\nmain:\n" ++ unlines (map show code)
+  show (AssemblyIr code data') = unlines (map show data') ++ "\n\n.globl main\n" ++ unlines (map show code)
 
 -- TODO: actually generate constructors...
+
+main = ([AssemblyLabel $ Label "main", Jump $ Label "Main.main"], [])
+
+outInt =
+  let formatLabel = Label "out_int_format"
+   in ( [ AssemblyLabel $ Label "out_int",
+          LoadLabel formatLabel TwacR.Rdi,
+          Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
+          Call $ Label "printf"
+        ],
+        [StringConstant formatLabel "%d"]
+      )
+
 generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
 generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.constructorMap, TwacR.typeDetailsMap} =
-  evalState
-    ( do
-        let methodList = map snd $ Map.toList implementationMap
-        x <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
-        let (code, data') = traverse combineAssembly x
-        pure $ AssemblyIr code (concat data')
-    )
-    temporaryState
+  uncurry AssemblyIr $
+    combineAssembly
+      [ main,
+        outInt,
+        evalState
+          ( do
+              let methodList = map snd $ Map.toList implementationMap
+              x <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
+              let (code, data') = traverse combineAssembly x
+              pure (code, concat data')
+          )
+          temporaryState
+      ]
 
 generateAssemblyMethod :: TypeDetailsMap -> TwacR.TwacRMethod -> State Temporary ([AssemblyStatement], [AssemblyData])
 generateAssemblyMethod typeDetailsMap method = do
@@ -183,7 +206,7 @@ getAddress registerParamCount variable = case variable of
 
 -- Gives the address of the nth attribute pointed to by the given register
 attributeAddress :: TwacR.Register -> Int -> Address
-attributeAddress reg n = Address (Just $ n * 8) reg
+attributeAddress reg n = Address (Just $ (n + 3) * 8) reg
 
 generateAssemblyStatements :: Int -> TypeDetailsMap -> TwacR.TwacRStatement -> State Temporary ([AssemblyStatement], [AssemblyData])
 generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
@@ -308,7 +331,7 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
           Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs ->
             case dispatchMethod of
               "in_int" -> pure $ instOnly [Call $ Label "in_int"]
-              "out_int" -> pure $ instOnly [Call $ Label "puts"]
+              "out_int" -> pure $ instOnly [Call $ Label "out_int"]
           Twac.Jump label ->
             pure $ instOnly [Jump label]
           Twac.TwacLabel label ->
@@ -335,8 +358,8 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
 -- happy.
 calloc :: Int -> [AssemblyStatement]
 calloc words =
-  [ LoadConst 8 TwacR.Rsi,
-    LoadConst words TwacR.Rdi,
+  [ LoadConst words TwacR.Rdi,
+    LoadConst 8 TwacR.Rsi,
     Call $ Label "calloc"
   ]
 

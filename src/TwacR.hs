@@ -212,11 +212,15 @@ generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount
       -- This is always a multiple of 16 bytes, to keep the stack 16-byte aligned.
       temporarySpace = temporaryCount + (temporaryCount + registerParamCount) `rem` 1
       prologue =
-        Lined 0 (TwacRStatement $ TwacLabel $ Label $ typeName ++ "." ++ name)
-          : map (Lined 0 . Push) calleeSavedRegisters
+        -- We push %rbp separate from the other registers, because it needs to
+        -- be saved before we set the frame pointer.
+        [ Lined 0 (TwacRStatement $ TwacLabel $ Label $ typeName ++ "." ++ name),
+          Lined 0 $ Push Rbp,
+          Lined 0 $ TwacRStatement $ Assign Rsp Rbp
+        ]
+          ++ map (Lined 0 . Push) (tail calleeSavedRegisters)
           ++ map (Lined 0 . Push) (take registerParamCount paramRegisters)
-          ++ [ Lined 0 $ TwacRStatement $ Assign Rsp Rbp,
-               Lined 0 $ AllocateStackSpace temporarySpace,
+          ++ [ Lined 0 $ AllocateStackSpace temporarySpace,
                Lined 0 $ Load (ParameterV 0) R15
              ]
       epilogue =

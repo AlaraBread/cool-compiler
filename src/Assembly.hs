@@ -22,6 +22,7 @@ data AssemblyStatement
   | Cmp TwacR.Register TwacR.Register
   | Test TwacR.Register TwacR.Register
   | TestConst TwacR.Register Integer
+  | CmpConst TwacR.Register Integer
   | Store TwacR.Register Address
   | StoreConst Int Address
   | Load Address TwacR.Register
@@ -284,9 +285,24 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                   InputIr.Type "String" -> delegateToNew
                   typeOther -> pure $ instOnly [LoadConst 0 dst]
           Twac.IsVoid dst -> do
-            (new, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") dst
             -- after new, the allocated object is in Rax
-            pure $ instOnly (new ++ [StoreConst 1 $ attributeAddress TwacR.Rax 0])
+            (new, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") dst
+            nonVoidLabel <- getLabel
+            endLabel <- getLabel
+            pure $
+              instOnly
+                ( new
+                    ++ [ CmpConst TwacR.Rax 0,
+                         JumpNonZero nonVoidLabel,
+                         -- isvoid
+                         StoreConst 1 $ attributeAddress TwacR.Rax 0,
+                         Jump endLabel,
+                         AssemblyLabel nonVoidLabel,
+                         -- not isvoid
+                         StoreConst 0 $ attributeAddress TwacR.Rax 0,
+                         AssemblyLabel endLabel
+                       ]
+                )
           -- TODO: make this not *incredibly* janky, lol
           Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs -> undefined
           Twac.Jump label ->

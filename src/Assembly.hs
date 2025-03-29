@@ -129,9 +129,26 @@ outInt =
    in ( [ AssemblyLabel $ Label "out_int",
           LoadLabel formatLabel TwacR.Rdi,
           Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
-          Call $ Label "printf"
+          SubtractImmediate 8 TwacR.Rsp,
+          Call $ Label "printf",
+          AddImmediate 8 TwacR.Rsp,
+          Return
         ],
         [StringConstant formatLabel "%d"]
+      )
+
+outString =
+  let formatLabel = Label "out_string_format"
+   in ( [ AssemblyLabel $ Label "out_string",
+          LoadLabel formatLabel TwacR.Rdi,
+          -- todo: is the pointer to the string the 0th or 1st attribute?
+          Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
+          SubtractImmediate 8 TwacR.Rsp,
+          Call $ Label "printf",
+          AddImmediate 8 TwacR.Rsp,
+          Return
+        ],
+        [StringConstant formatLabel "%s"]
       )
 
 generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr

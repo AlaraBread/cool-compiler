@@ -81,7 +81,7 @@ instance Show AssemblyStatement where
           JumpNonZero label -> unary "jnz" label
           JumpLessThan label -> unary "jl" label
           JumpLessThanEqual label -> unary "jle" label
-          LoadLabel label dst -> binary "movq" label dst
+          LoadLabel label dst -> binary "leaq" label dst
           JumpAddress addr -> unary "jmp" addr
           Comment string -> indent $ "## " ++ string
 
@@ -127,6 +127,7 @@ main = ([AssemblyLabel $ Label "main", Jump $ Label "Main.main"], [])
 outInt =
   let formatLabel = Label "out_int_format"
    in ( [ AssemblyLabel $ Label "out_int",
+          -- keep the stack 16-byte aligned
           LoadLabel formatLabel TwacR.Rdi,
           Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
           SubtractImmediate 8 TwacR.Rsp,

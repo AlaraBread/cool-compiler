@@ -29,7 +29,8 @@ main = do
 
   let (TwacIr twacImpMap _ _, temporaryState') = generateTwac pickLowestParents' tracIr temporaryState
 
-  -- print out Trac for debugging
+
+  putStrLn "Main.main Trac: "
   let (TracIr tracImpMap _ _) = tracIr
   let mainClassMethods' = tracImpMap Map.! Type "Main"
   let TracMethod _ body' _ _ =
@@ -39,6 +40,7 @@ main = do
   -- We want to find the Main method
   let mainClassMethods = twacImpMap Map.! Type "Main"
 
+  putStrLn "Main.main Twac: "
   let TwacMethod _ body _ _ =
         head $ Prelude.filter (\m -> Twac.methodName m == "main") mainClassMethods
-  writeFile (outputFile inputFile) $ showTwac body
+  putStrLn $ showTwac body

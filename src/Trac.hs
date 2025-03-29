@@ -283,6 +283,7 @@ generateTracExpr
                     ++ bodyTrac
                     ++ [lined whilePredicate $ Jump whileStart]
                     ++ [lined whilePredicate $ TracLabel endLabel]
+                    ++ [lined whilePredicate $ New outV $ InputIr.Type "Object"]
                     ++ [lined whilePredicate $ Default outV $ InputIr.Type "Object"],
                   outV
                 )
@@ -321,6 +322,7 @@ generateTracExpr
 
             let defaultInitializer =
                   [ lined' $ Comment $ InputIr.lexeme bindingName ++ " <- default",
+                    lined' $ New bindingV bindingType,
                     lined' $ Default bindingV bindingType
                   ]
 
@@ -450,7 +452,7 @@ generateTracConstructor selfType attrs = do
             Just e -> do
               (trac, v) <- generateTracExpr attributeMap selfType e
               pure $ trac ++ [Lined line $ Assign (AttributeV idx) v]
-            Nothing -> pure [Lined line $ Default (AttributeV idx) attrType]
+            Nothing -> pure [Lined line $ New (AttributeV idx) attrType, Lined line $ Default (AttributeV idx) attrType]
       )
       (zip attrs [0, 1 ..])
   pure $ concat attrs'

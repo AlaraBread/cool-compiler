@@ -95,7 +95,7 @@ instance (Show v) => Show (TwacStatement v) where
           Return var -> "return " ++ show var
           Comment str -> "comment " ++ str
           ConditionalJump var lbl -> "bt " ++ show var ++ show lbl
-          Assign src dst -> showBinary src dst ""
+          Assign src dst -> show dst ++ " <- " ++ show src
           -- TODO: this is incomplete
           TwacCase var _ -> "case " ++ show var
           Abort line str -> "abort " ++ show line ++ ": " ++ str
@@ -125,7 +125,7 @@ generateTwacStatement pickLowestParents tracStatement = case tracStatement of
   Trac.Not dst src -> pure $ generateUnaryStatement Not dst src
   Trac.Negate dst src -> pure $ generateUnaryStatement Negate dst src
   Trac.New dst type' -> pure [New type' dst]
-  Trac.Default dst type' -> pure [New type' dst]
+  Trac.Default dst type' -> pure [Default type' dst]
   Trac.IsVoid dst src -> pure $ generateUnaryStatement Not dst src
   Trac.Dispatch res rec recType t m as -> pure [Dispatch res rec recType t m as]
   Trac.Jump l -> pure [Jump l]

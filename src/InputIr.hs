@@ -102,7 +102,7 @@ data ExprWithoutLine
   deriving (Show)
 
 -- Represents a binding in a let binding.
-data LetBinding = LetBinding {letBindingName :: !Identifier, letBindingType' :: !Identifier, letBindingRhs :: !(Maybe (Typed Expr))}
+data LetBinding = LetBinding {letBindingName :: !Identifier, letBindingType' :: !Type, letBindingRhs :: !(Maybe (Typed Expr))}
   deriving (Show)
 
 -- Represents a case element.

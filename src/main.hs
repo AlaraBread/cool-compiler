@@ -27,10 +27,10 @@ main = do
   let (InputIr classMap _ parentMap _) = inputIr
   let pickLowestParents' = pickLowestParents classMap parentMap
 
-  let (TwacIr twacImpMap _, temporaryState') = generateTwac pickLowestParents' tracIr temporaryState
+  let (TwacIr twacImpMap _ _, temporaryState') = generateTwac pickLowestParents' tracIr temporaryState
 
   -- print out Trac for debugging
-  let (TracIr tracImpMap _) = tracIr
+  let (TracIr tracImpMap _ _) = tracIr
   let mainClassMethods' = tracImpMap Map.! Type "Main"
   let TracMethod _ body' _ _ =
         head $ Prelude.filter (\m -> Trac.methodName m == "main") mainClassMethods'

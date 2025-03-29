@@ -321,7 +321,7 @@ generateTracExpr
 
             let defaultInitializer =
                   [ lined' $ Comment $ InputIr.lexeme bindingName ++ " <- default",
-                    lined' $ Default bindingV type'
+                    lined' $ Default bindingV bindingType
                   ]
 
             initializer <- case rhs of

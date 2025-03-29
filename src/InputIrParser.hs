@@ -171,12 +171,15 @@ parseLetBinding :: Parser LetBinding
 parseLetBinding = do
   bindingType <- parseLine
   case bindingType of
-    "let_binding_no_init" -> LetBinding <$> parseIdentifier <*> parseIdentifier <*> pure Nothing
-    "let_binding_init" -> LetBinding <$> parseIdentifier <*> parseIdentifier <*> (Just <$> parseExpr)
+    "let_binding_no_init" -> LetBinding <$> parseIdentifier <*> (identifierToType <$> parseIdentifier) <*> pure Nothing
+    "let_binding_init" -> LetBinding <$> parseIdentifier <*> (identifierToType <$> parseIdentifier) <*> (Just <$> parseExpr)
 
 -- Parses a single case element.
 parseCaseElement :: Parser CaseElement
 parseCaseElement = CaseElement <$> parseIdentifier <*> parseIdentifier <*> parseExpr
+
+identifierToType :: Identifier -> Type
+identifierToType (Identifier _ lexeme) = Type lexeme
 
 parseIdentifier :: Parser Identifier
 parseIdentifier = Identifier <$> parseInt <*> parseLine

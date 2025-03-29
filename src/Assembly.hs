@@ -49,23 +49,24 @@ instance Show AssemblyStatement where
   show instruction =
     let indent = (++) "    "
         unary op arg = indent $ op ++ " " ++ show arg
-        binary op src dst = indent $ op ++ " " ++ show src ++ " " ++ show dst
+        binary op src dst = indent $ op ++ " " ++ show src ++ ", " ++ show dst
+        binaryConst op src dst = indent $ op ++ " $" ++ show src ++ ", " ++ show dst
      in case instruction of
           Add src dst -> binary "addq" src dst
-          AddImmediate src dst -> binary "addq" src dst
+          AddImmediate src dst -> binaryConst "addq" src dst
           Subtract src dst -> binary "subq" src dst
-          SubtractImmediate src dst -> binary "subq" src dst
+          SubtractImmediate src dst -> binaryConst "subq" src dst
           Multiply src dst -> binary "imulq" src dst
           Divide src -> unary "idivq" src
-          Cqto -> "cqto"
+          Cqto -> indent "cqto"
           Cmp src dst -> binary "cmpq" src dst
           Test src dst -> binary "testq" src dst
           TestConst src dst -> binary "testq" src dst
           CmpConst src dst -> binary "cmpq" src dst
           Store src dst -> binary "movq" src dst
-          StoreConst src dst -> binary "movq" src dst
+          StoreConst src dst -> binaryConst "movq" src dst
           Load src dst -> binary "movq" src dst
-          LoadConst src dst -> binary "movq" src dst
+          LoadConst src dst -> binaryConst "movq" src dst
           Transfer src dst -> binary "movq" src dst
           Push src -> unary "pushq" src
           Pop dst -> unary "pushq" dst
@@ -95,20 +96,14 @@ data AssemblyData
 
 data Address = Address
   { addressOffset :: Maybe Int,
-    addressBase :: TwacR.Register,
-    addressIndex :: Maybe TwacR.Register,
-    addressScale :: Maybe Int
+    addressBase :: TwacR.Register
   }
 
 instance Show Address where
-  show (Address offset base index scale) =
+  show (Address offset base) =
     maybe "" show offset
       ++ "("
       ++ show base
-      ++ ","
-      ++ maybe "" show index
-      ++ ","
-      ++ maybe "" show scale
       ++ ")"
 
 data AssemblyIr = AssemblyIr
@@ -116,8 +111,9 @@ data AssemblyIr = AssemblyIr
     assemblyIrData :: [AssemblyData]
   }
 
+-- TODO: Actually show data, don't just shove main at the beginning.
 instance Show AssemblyIr where
-  show (AssemblyIr code data') = unlines (map show code)
+  show (AssemblyIr code data') = ".globl main\nmain:\n" ++ unlines (map show code)
 
 -- TODO: actually generate constructors...
 generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
@@ -137,7 +133,11 @@ generateAssemblyMethod typeDetailsMap method = do
     traverse
       (generateAssemblyStatements (TwacR.registerParamCount method) typeDetailsMap . item)
       (TwacR.body method)
-  pure $ combineAssembly lines
+  -- TODO: this is a hack for PA3c3.
+  pure $
+    if TwacR.methodName method == "main"
+      then combineAssembly lines
+      else ([], [])
 
 combineAssembly :: [([AssemblyStatement], [AssemblyData])] -> ([AssemblyStatement], [AssemblyData])
 combineAssembly asm =
@@ -173,17 +173,17 @@ combineAssembly asm =
 getAddress :: Int -> Variable -> Address
 getAddress registerParamCount variable = case variable of
   TemporaryV t ->
-    Address (Just $ (-8) * (registerParamCount + t) - 64) TwacR.Rbp Nothing Nothing
+    Address (Just $ -8 * (registerParamCount + t) - 64) TwacR.Rbp
   AttributeV n ->
-    Address (Just $ (3 + n) * 8) TwacR.R15 Nothing Nothing
+    Address (Just $ (3 + n) * 8) TwacR.R15
   ParameterV n ->
     if n < 6
-      then Address (Just $ (-8) * n - 56) TwacR.Rbp Nothing Nothing
-      else Address (Just $ 8 * (n - 6) + 16) TwacR.Rbp Nothing Nothing
+      then Address (Just $ -8 * n - 56) TwacR.Rbp
+      else Address (Just $ 8 * (n - 6) + 16) TwacR.Rbp
 
 -- Gives the address of the nth attribute pointed to by the given register
 attributeAddress :: TwacR.Register -> Int -> Address
-attributeAddress reg n = Address (Just n) reg Nothing Nothing
+attributeAddress reg n = Address (Just $ n * 8) reg
 
 generateAssemblyStatements :: Int -> TypeDetailsMap -> TwacR.TwacRStatement -> State Temporary ([AssemblyStatement], [AssemblyData])
 generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
@@ -304,8 +304,11 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                          AssemblyLabel endLabel
                        ]
                 )
-          -- TODO: make this not *incredibly* janky, lol
-          Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs -> undefined
+          -- TODO: make this not *incredibly* janky, lol. This *only* handles in_int and out_int.
+          Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs ->
+            case dispatchMethod of
+              "in_int" -> pure $ instOnly [Call $ Label "in_int"]
+              "out_int" -> pure $ instOnly [Call $ Label "puts"]
           Twac.Jump label ->
             pure $ instOnly [Jump label]
           Twac.TwacLabel label ->

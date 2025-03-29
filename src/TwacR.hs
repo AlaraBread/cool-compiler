@@ -1,10 +1,10 @@
 module TwacR where
 
 import Control.Exception (assert)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import InputIr (Formal, Type)
-import Trac (TypeDetailsMap, Variable (ParameterV))
+import InputIr (Formal, Type (Type))
+import Trac (Label (Label), TypeDetailsMap, Variable (ParameterV))
 import Twac
 import Util
 
@@ -205,16 +205,18 @@ generateTwacRStatements epilogue freeRegisters twac =
 generateTwacR :: TwacR -> TwacI -> TwacR
 generateTwacR epilogue = concatMap (unsequence . fmap (generateTwacRStatements epilogue freeRegisters))
 
-generateTwacRMethod :: TwacMethod Variable -> TwacRMethod
-generateTwacRMethod (TwacMethod name body formals temporaryCount) =
+generateTwacRMethod :: Type -> TwacMethod Variable -> TwacRMethod
+generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount) =
   let registerParamCount = (min 6 $ 1 + length formals)
       memoryParamCount = (max 0 $ 1 - 6 + length formals)
       -- This is always a multiple of 16 bytes, to keep the stack 16-byte aligned.
       temporarySpace = temporaryCount + (temporaryCount + registerParamCount) `rem` 1
       prologue =
-        map (Lined 0 . Push) calleeSavedRegisters
+        Lined 0 (TwacRStatement $ TwacLabel $ Label $ typeName ++ "." ++ name)
+          : map (Lined 0 . Push) calleeSavedRegisters
           ++ map (Lined 0 . Push) (take registerParamCount paramRegisters)
-          ++ [ Lined 0 $ AllocateStackSpace temporarySpace,
+          ++ [ Lined 0 $ TwacRStatement $ Assign Rsp Rbp,
+               Lined 0 $ AllocateStackSpace temporarySpace,
                Lined 0 $ Load (ParameterV 0) R15
              ]
       epilogue =
@@ -229,4 +231,4 @@ generateTwacRMethod (TwacMethod name body formals temporaryCount) =
 generateTwacRIr :: TwacIIr -> TwacRIr
 generateTwacRIr (TwacIr impMap constructorMap typeDetailsMap) =
   let gen = generateTwacRStatements [] freeRegisters
-   in TwacRIr (fmap (fmap generateTwacRMethod) impMap) (fmap (generateTwacR []) constructorMap) typeDetailsMap
+   in TwacRIr (Map.mapWithKey (fmap . generateTwacRMethod) impMap) (fmap (generateTwacR []) constructorMap) typeDetailsMap

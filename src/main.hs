@@ -2,6 +2,7 @@
 
 module Main where
 
+import Assembly
 import Data.Map.Strict as Map
 import InputIr
 import InputIrParser
@@ -9,13 +10,10 @@ import System.Directory.Internal.Prelude (getArgs)
 import Trac
 import Twac
 import TwacR
-import Assembly
 
 -- Takes an input file name and gives us an output file name.
 outputFile :: String -> String
-outputFile input = reverse $ outputFile' $ reverse input
-  where
-    outputFile' (_ : _ : _ : _ : rest) = "cawt" ++ rest -- meow :3
+outputFile input = reverse $ "s" ++ Prelude.drop 7 (reverse input)
 
 main :: IO ()
 main = do
@@ -52,5 +50,6 @@ main = do
   putStrLn $ showTwac body
 
   putStrLn "asm: "
-  let twacAsmIr = generateAssembly temporaryState' twacRIr
-  print twacAsmIr
+  let asmIr = generateAssembly temporaryState' twacRIr
+  print asmIr
+  writeFile (outputFile inputFile) $ show asmIr

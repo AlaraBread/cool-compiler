@@ -426,10 +426,7 @@ generateTracMethod attributes type' (InputIr.Method {InputIr.methodName, InputIr
   pure
     TracMethod
       { methodName = InputIr.lexeme methodName,
-        body =
-          Lined (InputIr.line methodName) (TracLabel (Label $ typeName ++ "_" ++ InputIr.lexeme methodName))
-            : trac
-            ++ [Lined (InputIr.line methodName) $ Return v],
+        body = trac ++ [Lined (InputIr.line methodName) $ Return v],
         formals = methodFormals,
         temporaryCount = temporaryCount'
       }

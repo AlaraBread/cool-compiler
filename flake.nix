@@ -16,17 +16,17 @@
 
       nixpkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
     in {
-      devShells = forAllSystems (system: {
-        default = let pkgs = nixpkgsFor.${system};
-        in pkgs.mkShell {
-          buildInputs = with pkgs; [
-            ghc
-            # haskell.compiler.ghc810
-            haskell-language-server
-            ormolu
-            glibc.static
-          ];
-        };
-      });
+      devShells = forAllSystems (system:
+        let pkgs = nixpkgsFor.${system};
+        in {
+          default = pkgs.mkShell {
+            buildInputs = with pkgs; [ ghc haskell-language-server ormolu ];
+          };
+
+          oldghc =
+            pkgs.mkShell { buildInputs = [ pkgs.haskell.compiler.ghc810 ]; };
+
+          static = pkgs.mkShell { buildInputs = [ pkgs.glibc.static ]; };
+        });
     };
 }

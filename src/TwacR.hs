@@ -134,14 +134,7 @@ generateTwacRStatements epilogue freeRegisters twac =
         Add src dst -> binaryOperation Add src dst
         Subtract src dst -> binaryOperation Subtract src dst
         Multiply src dst -> binaryOperation Multiply src dst
-        Divide src dst ->
-          let (srcR, freeRegisters') = Set.deleteFindMin freeRegisters
-           in [ Load dst Rax,
-                Load src srcR,
-                -- in the code gen stage, this pretty much is just cqto; idiv srcR
-                TwacRStatement $ Divide srcR Rax,
-                Store Rax dst
-              ]
+        Divide src dst -> binaryOperation Divide src dst
         LessThan src dst -> binaryOperation LessThan src dst
         LessThanOrEqualTo src dst -> binaryOperation LessThanOrEqualTo src dst
         Equals src dst -> binaryOperation Equals src dst

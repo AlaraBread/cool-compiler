@@ -275,8 +275,10 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
           Twac.Divide src dst ->
             pure $
               instOnly
-                [ Cqto,
-                  Divide src,
+                [ Load (attributeAddress src 0) r1,
+                  Load (attributeAddress dst 0) TwacR.Rax,
+                  Cqto,
+                  Divide r1,
                   Store TwacR.Rax (attributeAddress dst 0)
                 ]
           Twac.LessThan src dst -> do

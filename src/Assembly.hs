@@ -69,7 +69,7 @@ instance Show AssemblyStatement where
           LoadConst src dst -> binaryConst "movq" src dst
           Transfer src dst -> binary "movq" src dst
           Push src -> unary "pushq" src
-          Pop dst -> unary "pushq" dst
+          Pop dst -> unary "popq" dst
           Not dst -> unary "notq" dst
           Negate dst -> unary "negl" dst
           AssemblyLabel (Label label) -> label ++ ":"

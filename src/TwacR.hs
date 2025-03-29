@@ -36,8 +36,8 @@ instance Show TwacRStatement where
     Store src dst -> show dst ++ " <- " ++ show src
     Push src -> "push " ++ show src
     Pop dst -> "pop " ++ show dst
-    AllocateStackSpace n -> "allocate " ++ show n
-    DeallocateStackSpace n -> "deallocate " ++ show n
+    AllocateStackSpace n -> "stack_allocate " ++ show n
+    DeallocateStackSpace n -> "stack_deallocate " ++ show n
 
 data Register
   = Rax
@@ -209,8 +209,9 @@ generateTwacRMethod :: Type -> TwacMethod Variable -> TwacRMethod
 generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount) =
   let registerParamCount = (min 6 $ 1 + length formals)
       memoryParamCount = (max 0 $ 1 - 6 + length formals)
-      -- This is always a multiple of 16 bytes, to keep the stack 16-byte aligned.
-      temporarySpace = temporaryCount + (temporaryCount + registerParamCount) `rem` 1
+      -- This is always 16n+8 bytes, to keep the stack 16-byte aligned. Note the
+      -- return address unaligns the stack by 8 bytes, so this cancels out.
+      temporarySpace = temporaryCount + ((temporaryCount + registerParamCount + length calleeSavedRegisters) `rem` 2) + 1
       prologue =
         -- We push %rbp separate from the other registers, because it needs to
         -- be saved before we set the frame pointer.

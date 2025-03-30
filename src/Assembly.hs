@@ -130,7 +130,7 @@ inInt typeDetailsMap =
   let formatLabel = Label "in_int_format"
       TypeDetails tag size = typeDetailsMap Map.! InputIr.Type "Int"
    in ( [AssemblyLabel $ Label "in_int"]
-          ++ calloc size
+          ++ callocWords size
           ++ [ StoreConst size (attributeAddress TwacR.Rax $ -3),
                StoreConst tag (attributeAddress TwacR.Rax $ -2),
                Transfer TwacR.Rax TwacR.R14,

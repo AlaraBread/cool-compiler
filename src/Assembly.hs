@@ -1,3 +1,5 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 module Assembly where
 
 import Control.Monad.State
@@ -124,7 +126,7 @@ instance Show AssemblyIr where
 
 -- TODO: actually generate constructors...
 
-main = ([AssemblyLabel $ Label "main", Jump $ Label "Main.main"], [])
+main' = ([AssemblyLabel $ Label "main", Jump $ Label "Main.main"], [])
 
 inInt typeDetailsMap =
   let formatLabel = Label "in_int_format"
@@ -178,7 +180,7 @@ generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
 generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.constructorMap, TwacR.typeDetailsMap} =
   uncurry AssemblyIr $
     combineAssembly
-      [ main,
+      [ main',
         inInt typeDetailsMap,
         outInt,
         outString,

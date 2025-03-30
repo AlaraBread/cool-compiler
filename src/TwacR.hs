@@ -1,3 +1,5 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 module TwacR where
 
 import Control.Exception (assert)

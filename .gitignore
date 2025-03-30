@@ -13,3 +13,4 @@ src/main
 *.cl-type
 *.s
 a.out
+test-out/

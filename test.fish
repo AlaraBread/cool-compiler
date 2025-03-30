@@ -15,7 +15,7 @@ for file in $dir/*.cl
 
     cool --type "$dir/$base.cl"
     src/main "$dir/$base.cl-type"
-    gcc -no-pie -static "$dir/$base.s"
+    gcc -no-pie -static "$dir/$base.s" 2&>/dev/null
     echo $n | ./a.out >test-out/"$base"-ours.txt
 
     rm "$dir/$base.cl-type"
@@ -23,5 +23,5 @@ for file in $dir/*.cl
     rm ./a.out
 
     diff test-out/"$base"-reference.txt test-out/"$base"-ours.txt
-    printf "\n\n"
+    echo ""
 end

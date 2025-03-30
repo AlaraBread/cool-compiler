@@ -342,7 +342,7 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
             pure $ instOnly $ construction ++ [LoadConst i r1, Store r1 (attributeAddress dst 0)]
           Twac.BoolConstant b dst -> do
             (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Int") dst
-            pure $ instOnly $ construction ++ [LoadConst (if b then -1 else 0) r1, Store r1 (attributeAddress dst 0)]
+            pure $ instOnly $ construction ++ [LoadConst (if b then 1 else 0) r1, Store r1 (attributeAddress dst 0)]
           Twac.StringConstant s dst -> do
             stringLabel <- getLabel
             pure
@@ -466,7 +466,7 @@ setBool boolReg conditionalJump = do
     [ conditionalJump trueLabel,
       Jump falseLabel,
       AssemblyLabel trueLabel,
-      LoadConst (-1) TwacR.R11,
+      LoadConst 1 TwacR.R11,
       Store TwacR.R11 (attributeAddress boolReg 0),
       AssemblyLabel falseLabel
     ]

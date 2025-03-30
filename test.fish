@@ -1,24 +1,27 @@
 #!/usr/bin/env fish
 
-set dir "examples/pa3c3-subset"
+set dir examples/pa3c3-subset
+
+mkdir test-out
+
+set n 100
 
 for file in $dir/*.cl
     set base (basename --suffix '.cl' $file)
 
     echo $base
 
-    cool --tac "$dir/$base.cl"
-    cool "$dir/$base.cl-tac" > out-reference.txt
-
-    rm "$dir/$base.cl-tac"
+    echo $n | cool "$dir/$base.cl" >test-out/"$base"-reference.txt
 
     cool --type "$dir/$base.cl"
     src/main "$dir/$base.cl-type"
-    cool "$dir/$base.cl-tac" > out-ours.txt
+    gcc -no-pie -static "$dir/$base.s"
+    echo $n | ./a.out >test-out/"$base"-ours.txt
 
-    rm $dir/$base.cl-*
+    rm "$dir/$base.cl-type"
+    rm "$dir/$base.s"
+    rm ./a.out
 
-    diff out-reference.txt out-ours.txt
-    rm out-reference.txt out-ours.txt
+    diff test-out/"$base"-reference.txt test-out/"$base"-ours.txt
+    printf "\n\n"
 end
-

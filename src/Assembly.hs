@@ -26,6 +26,7 @@ data AssemblyStatement
   | Test TwacR.Register TwacR.Register
   | TestConst TwacR.Register Integer
   | CmpConst Integer TwacR.Register
+  | XorConst Integer TwacR.Register
   | Store TwacR.Register Address
   | StoreConst Int Address
   | Lea Address TwacR.Register
@@ -68,6 +69,7 @@ instance Show AssemblyStatement where
           Test src dst -> binary "testq" src dst
           TestConst src dst -> binary "testq" src dst
           CmpConst src dst -> binaryConst "cmpq" src dst
+          XorConst src dst -> binaryConst "xorq" src dst
           Store src dst -> binary "movq" src dst
           StoreConst src dst -> binaryConst "movq" src dst
           Lea src dst -> binary "leaq" src dst
@@ -135,6 +137,7 @@ instance Show AssemblyIr where
 
 main' = ([AssemblyLabel $ Label "main", Jump $ Label "Main.main"], [])
 
+-- TODO: write error handling here
 inInt typeDetailsMap =
   let formatLabel = Label "in_int_format"
       TypeDetails tag size = typeDetailsMap Map.! InputIr.Type "Int"
@@ -450,7 +453,7 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
             pure $
               instOnly
                 [ Load (attributeAddress dst 0) r1,
-                  Not r1,
+                  XorConst 1 r1,
                   Store r1 (attributeAddress dst 0)
                 ]
           Twac.Negate dst ->

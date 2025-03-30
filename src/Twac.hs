@@ -96,7 +96,7 @@ instance (Show v) => Show (TwacStatement v) where
           TwacLabel lbl -> "label " ++ show lbl
           Return var -> "return " ++ show var
           Comment str -> "comment " ++ str
-          ConditionalJump var lbl -> "bt " ++ show var ++ show lbl
+          ConditionalJump var lbl -> "bt " ++ show var ++ " " ++ show lbl
           Assign src dst -> show dst ++ " <- " ++ show src
           Copy src dst -> "copy " ++ show src ++ " " ++ show dst
           -- TODO: this is incomplete

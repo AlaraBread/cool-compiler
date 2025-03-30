@@ -351,8 +351,9 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
       -- scratch registers
       r1 = TwacR.R10
       r2 = TwacR.R11
-      rCallee1 = TwacR.R13
-      rCallee2 = TwacR.R14
+      rCallee1 = TwacR.R12
+      rCallee2 = TwacR.R13
+      rCallee3 = TwacR.R14
    in case twacRStatement of
         TwacR.Load src dst ->
           pure $ instOnly [Load (getAddress' src) dst]
@@ -400,18 +401,34 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                   Divide r1,
                   Store TwacR.Rax (attributeAddress dst 0)
                 ]
+          -- TODO: make comparisons handle things that are not booleans or ints
           Twac.LessThan src dst -> do
-            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") r1
-            setting <- setBool r1 JumpLessThan
-            pure $ instOnly $ construction ++ [Cmp src dst] ++ setting ++ [Transfer r1 dst]
+            let load =
+                  [ Load (attributeAddress src 0) rCallee1,
+                    Load (attributeAddress dst 0) rCallee2,
+                    Transfer dst rCallee3
+                  ]
+            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") rCallee3
+            setting <- setBool rCallee3 JumpLessThan
+            pure $ instOnly $ load ++ construction ++ [Cmp rCallee1 rCallee2] ++ setting ++ [Transfer rCallee3 dst]
           Twac.LessThanOrEqualTo src dst -> do
-            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") r1
-            setting <- setBool r1 JumpLessThanEqual
-            pure $ instOnly $ construction ++ [Cmp src dst] ++ setting ++ [Transfer r1 dst]
+            let load =
+                  [ Load (attributeAddress src 0) rCallee1,
+                    Load (attributeAddress dst 0) rCallee2,
+                    Transfer dst rCallee3
+                  ]
+            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") rCallee3
+            setting <- setBool rCallee3 JumpLessThanEqual
+            pure $ instOnly $ load ++ construction ++ [Cmp rCallee1 rCallee2] ++ setting ++ [Transfer rCallee3 dst]
           Twac.Equals src dst -> do
-            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") r1
-            setting <- setBool r1 JumpZero
-            pure $ instOnly $ construction ++ [Cmp src dst] ++ setting ++ [Transfer r1 dst]
+            let load =
+                  [ Load (attributeAddress src 0) rCallee1,
+                    Load (attributeAddress dst 0) rCallee2,
+                    Transfer dst rCallee3
+                  ]
+            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") rCallee3
+            setting <- setBool rCallee3 JumpZero
+            pure $ instOnly $ load ++ construction ++ [Cmp rCallee1 rCallee2] ++ setting ++ [Transfer rCallee3 dst]
           Twac.IntConstant i dst -> do
             (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Int") dst
             pure $ instOnly $ construction ++ [LoadConst i r1, Store r1 (attributeAddress dst 0)]

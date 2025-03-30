@@ -114,6 +114,7 @@ reservedRegisters =
       R15, -- &self. Intentionally callee-saved and otherwise uninteresting.
       R10, -- scratch register for codegen
       R11, -- scratch register for codegen
+      R12, -- callee-saved register for codegen
       R13, -- callee-saved register for codegen
       R14 -- callee-saved register for codegen
     ]

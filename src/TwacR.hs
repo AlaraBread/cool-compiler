@@ -146,7 +146,7 @@ generateTwacRStatements epilogue freeRegisters twac =
         BoolConstant i v -> immediate (BoolConstant i) v
         StringConstant i v -> immediate (StringConstant i) v
         Not dst -> unaryOperation Not dst
-        Negate dst -> unaryOperation Not dst
+        Negate dst -> unaryOperation Negate dst
         -- These can use the immediate load/store sequence because they discard
         -- the existing value of dst, just like immediates do.
         New t dst -> immediate (New t) dst

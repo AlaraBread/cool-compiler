@@ -75,7 +75,7 @@ instance Show AssemblyStatement where
           Push src -> unary "pushq" src
           Pop dst -> unary "popq" dst
           Not dst -> unary "notq" dst
-          Negate dst -> unary "negl" dst
+          Negate dst -> unary "negq" dst
           AssemblyLabel (Label label) -> label ++ ":"
           Call label -> unary "call" label
           DynamicCall label -> unary "call" label
@@ -361,7 +361,12 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                   Store r1 (attributeAddress dst 0)
                 ]
           Twac.Negate dst ->
-            pure $ instOnly [Negate dst]
+            pure $
+              instOnly
+                [ Load (attributeAddress dst 0) r1,
+                  Negate r1,
+                  Store r1 (attributeAddress dst 0)
+                ]
           -- TODO: set vtable pointer
           -- TODO: deal with SELF_TYPE, somehow (look at type tag of self?)
           Twac.New type' dst ->

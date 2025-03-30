@@ -50,6 +50,7 @@ data TwacStatement v
   | Comment String
   | ConditionalJump v Label
   | Assign v v
+  | Copy v v
   | TwacCase v CaseJmpTable
   | Abort Int String
 
@@ -95,6 +96,7 @@ instance (Show v) => Show (TwacStatement v) where
           Comment str -> "comment " ++ str
           ConditionalJump var lbl -> "bt " ++ show var ++ show lbl
           Assign src dst -> show dst ++ " <- " ++ show src
+          Copy src dst -> "copy " ++ show src ++ " " ++ show dst
           -- TODO: this is incomplete
           TwacCase var _ -> "case " ++ show var
           Abort line str -> "abort " ++ show line ++ ": " ++ str
@@ -103,11 +105,11 @@ showTwac twac = unlines (map show twac)
 
 generateUnaryStatement :: (Variable -> TwacIStatement) -> Variable -> Variable -> [TwacIStatement]
 generateUnaryStatement op dst src =
-  [Assign src dst, op dst]
+  [Copy src dst, op dst]
 
 generateBinaryStatement :: (Variable -> Variable -> TwacIStatement) -> Variable -> Variable -> Variable -> [TwacIStatement]
 generateBinaryStatement op dst src1 src2 =
-  [Assign src1 dst, op src2 dst]
+  [Copy src1 dst, op src2 dst]
 
 generateTwacStatement :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracStatement -> State Temporary [TwacIStatement]
 generateTwacStatement pickLowestParents tracStatement = case tracStatement of

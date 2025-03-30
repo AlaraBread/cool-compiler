@@ -131,7 +131,7 @@ inInt typeDetailsMap =
       TypeDetails tag size = typeDetailsMap Map.! InputIr.Type "Int"
    in ( [AssemblyLabel $ Label "in_int"]
           ++ callocWords size
-          ++ [ StoreConst size (attributeAddress TwacR.Rax $ -3),
+          ++ [ StoreConst (size * 8) (attributeAddress TwacR.Rax $ -3),
                StoreConst tag (attributeAddress TwacR.Rax $ -2),
                Transfer TwacR.Rax TwacR.R14,
                LoadLabel formatLabel TwacR.Rdi,
@@ -258,6 +258,8 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
       -- scratch registers
       r1 = TwacR.R10
       r2 = TwacR.R11
+      rCallee1 = TwacR.R13
+      rCallee2 = TwacR.R14
    in case twacRStatement of
         TwacR.Load src dst ->
           pure $ instOnly [Load (getAddress' src) dst]
@@ -352,7 +354,7 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                       ++ [ Transfer TwacR.Rax dst,
                            -- accessing negative attributes is a cursed, but
                            -- correct way of doing this.
-                           StoreConst size (attributeAddress dst $ -3),
+                           StoreConst (size * 8) (attributeAddress dst $ -3),
                            StoreConst tag (attributeAddress dst $ -2)
                          ]
           Twac.Default type' dst ->
@@ -396,6 +398,24 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                 ]
           Twac.Assign src dst ->
             pure $ instOnly [Transfer src dst]
+          Twac.Copy src dst ->
+            pure $
+              instOnly
+                [ Comment $ "begin copy " ++ show src ++ " " ++ show dst,
+                  Transfer src rCallee1,
+                  -- allocate memory
+                  Load (attributeAddress src $ -3) TwacR.Rdi,
+                  Call $ Label "malloc",
+                  Transfer TwacR.Rax rCallee2,
+                  -- copy memory
+                  Transfer rCallee2 TwacR.Rdi,
+                  Transfer rCallee1 TwacR.Rsi,
+                  Load (attributeAddress rCallee1 $ -3) TwacR.Rdx,
+                  Call $ Label "memcpy",
+                  -- save ptr to memory to dst
+                  Transfer rCallee2 dst,
+                  Comment $ "end copy " ++ show src ++ " " ++ show dst
+                ]
           Twac.TwacCase condition jmpTable -> undefined
           Twac.Abort line string -> undefined
 

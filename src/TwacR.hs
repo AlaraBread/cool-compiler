@@ -93,7 +93,9 @@ reservedRegisters =
       Rdx, -- needed for division
       R15, -- &self. Intentionally callee-saved and otherwise uninteresting.
       R10, -- scratch register for codegen
-      R11 -- scratch register for codegen
+      R11, -- scratch register for codegen
+      R13, -- callee-saved register for codegen
+      R14 -- callee-saved register for codegen
     ]
 
 freeRegisters = Set.difference allRegisters reservedRegisters
@@ -188,6 +190,7 @@ generateTwacRStatements epilogue freeRegisters twac =
            in [ Load src vR,
                 Store vR dst
               ]
+        Copy src dst -> binaryOperation Copy src dst
         TwacCase v jmpTable ->
           let (vR, freeRegisters') = Set.deleteFindMin freeRegisters
            in [ Load v vR,

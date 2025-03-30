@@ -25,6 +25,7 @@ data AssemblyStatement
   | CmpConst TwacR.Register Integer
   | Store TwacR.Register Address
   | StoreConst Int Address
+  | Lea Address TwacR.Register
   | Load Address TwacR.Register
   | LoadConst Int TwacR.Register
   | Transfer TwacR.Register TwacR.Register
@@ -65,6 +66,7 @@ instance Show AssemblyStatement where
           CmpConst src dst -> binary "cmpq" src dst
           Store src dst -> binary "movq" src dst
           StoreConst src dst -> binaryConst "movq" src dst
+          Lea src dst -> binary "leaq" src dst
           Load src dst -> binary "movq" src dst
           LoadConst src dst -> binaryConst "movq" src dst
           Transfer src dst -> binary "movq" src dst
@@ -124,12 +126,32 @@ instance Show AssemblyIr where
 
 main = ([AssemblyLabel $ Label "main", Jump $ Label "Main.main"], [])
 
+inInt typeDetailsMap =
+  let formatLabel = Label "in_int_format"
+      TypeDetails tag size = typeDetailsMap Map.! InputIr.Type "Int"
+   in ( [AssemblyLabel $ Label "in_int"]
+          ++ calloc size
+          ++ [ StoreConst size (attributeAddress TwacR.Rax $ -3),
+               StoreConst tag (attributeAddress TwacR.Rax $ -2),
+               Transfer TwacR.Rax TwacR.R14,
+               LoadLabel formatLabel TwacR.Rdi,
+               Lea (attributeAddress TwacR.R14 0) TwacR.Rsi,
+               -- keep the stack 16-byte aligned
+               SubtractImmediate 8 TwacR.Rsp,
+               Call $ Label "scanf",
+               AddImmediate 8 TwacR.Rsp,
+               Transfer TwacR.R14 TwacR.Rax,
+               Return
+             ],
+        [StringConstant formatLabel "%d"]
+      )
+
 outInt =
   let formatLabel = Label "out_int_format"
    in ( [ AssemblyLabel $ Label "out_int",
-          -- keep the stack 16-byte aligned
           LoadLabel formatLabel TwacR.Rdi,
           Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
+          -- keep the stack 16-byte aligned
           SubtractImmediate 8 TwacR.Rsp,
           Call $ Label "printf",
           AddImmediate 8 TwacR.Rsp,
@@ -157,6 +179,7 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.co
   uncurry AssemblyIr $
     combineAssembly
       [ main,
+        inInt typeDetailsMap,
         outInt,
         evalState
           ( do
@@ -307,7 +330,7 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
           -- TODO: set vtable pointer
           -- TODO: deal with SELF_TYPE, somehow (look at type tag of self?)
           Twac.New type' dst ->
-            let (TypeDetails tag size) = typeDetailsMap Map.! type'
+            let TypeDetails tag size = typeDetailsMap Map.! type'
              in pure $
                   instOnly $
                     calloc size

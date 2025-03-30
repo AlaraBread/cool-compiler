@@ -47,6 +47,8 @@ data AssemblyStatement
   | JumpNonZero Label
   | JumpLessThan Label
   | JumpLessThanEqual Label
+  | JumpGreaterThan Label
+  | JumpGreaterThanEqual Label
   | LoadLabel Label TwacR.Register
   | JumpAddress Address
   | Comment String
@@ -90,6 +92,8 @@ instance Show AssemblyStatement where
           JumpNonZero label -> unary "jnz" label
           JumpLessThan label -> unary "jl" label
           JumpLessThanEqual label -> unary "jle" label
+          JumpGreaterThan label -> unary "jg" label
+          JumpGreaterThanEqual label -> unary "jge" label
           LoadLabel label dst -> binary "leaq" label dst
           JumpAddress addr -> unary "jmp" addr
           Comment string -> indent $ "## " ++ string
@@ -140,8 +144,11 @@ main' = ([AssemblyLabel $ Label "main", Jump $ Label "Main.main"], [])
 -- TODO: write error handling here
 inInt typeDetailsMap =
   let formatLabel = Label "in_int_format"
+      overflowLabel = Label "in_int_overflow"
+      noOverflowLabel = Label "in_int_no_overflow"
       TypeDetails tag size = typeDetailsMap Map.! InputIr.Type "Int"
    in ( [AssemblyLabel $ Label "in_int"]
+          -- since we calloc, the integer starts at zero
           ++ callocWords size
           ++ [ StoreConst (size * 8) (sizeAddress TwacR.Rax),
                StoreConst tag (typeTagAddress TwacR.Rax),
@@ -152,10 +159,20 @@ inInt typeDetailsMap =
                SubtractImmediate 8 TwacR.Rsp,
                Call $ Label "scanf",
                AddImmediate 8 TwacR.Rsp,
+               -- TODO: Should probably be a cmov, eventually
+               Load (attributeAddress TwacR.R14 0) TwacR.R13,
+               CmpConst 2147483647 TwacR.R13,
+               JumpGreaterThan overflowLabel,
+               CmpConst (-2147483648) TwacR.R13,
+               JumpLessThan overflowLabel,
+               Jump noOverflowLabel,
+               AssemblyLabel overflowLabel,
+               StoreConst 0 (attributeAddress TwacR.R14 0),
+               AssemblyLabel noOverflowLabel,
                Transfer TwacR.R14 TwacR.Rax,
                Return
              ],
-        [StringConstant formatLabel "%d"]
+        [StringConstant formatLabel "%ld"]
       )
 
 outInt =

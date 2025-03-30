@@ -12,3 +12,4 @@ src/main
 *.cl-ast
 *.cl-type
 *.s
+a.out

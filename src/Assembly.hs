@@ -181,6 +181,7 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.co
       [ main,
         inInt typeDetailsMap,
         outInt,
+        outString,
         evalState
           ( do
               let methodList = map snd $ Map.toList implementationMap
@@ -322,9 +323,23 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
           Twac.BoolConstant b dst -> do
             (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Int") dst
             pure $ instOnly $ construction ++ [LoadConst (if b then -1 else 0) r1, Store r1 (attributeAddress dst 0)]
-          Twac.StringConstant s dst -> undefined
+          Twac.StringConstant s dst -> do
+            stringLabel <- getLabel
+            pure
+              ( [ LoadLabel stringLabel r1,
+                  Store r1 (attributeAddress dst 0),
+                  LoadConst (length s) r2,
+                  Store r2 (attributeAddress dst 1)
+                ],
+                [StringConstant stringLabel s]
+              )
           Twac.Not dst ->
-            pure $ instOnly [Not dst]
+            pure $
+              instOnly
+                [ Load (attributeAddress dst 0) r1,
+                  Not r1,
+                  Store r1 (attributeAddress dst 0)
+                ]
           Twac.Negate dst ->
             pure $ instOnly [Negate dst]
           -- TODO: set vtable pointer
@@ -333,7 +348,7 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
             let TypeDetails tag size = typeDetailsMap Map.! type'
              in pure $
                   instOnly $
-                    calloc size
+                    callocWords size
                       ++ [ Transfer TwacR.Rax dst,
                            -- accessing negative attributes is a cursed, but
                            -- correct way of doing this.
@@ -356,25 +371,14 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
             (new, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") dst
             nonVoidLabel <- getLabel
             endLabel <- getLabel
-            pure $
-              instOnly
-                ( new
-                    ++ [ CmpConst TwacR.Rax 0,
-                         JumpNonZero nonVoidLabel,
-                         -- isvoid
-                         StoreConst 1 $ attributeAddress TwacR.Rax 0,
-                         Jump endLabel,
-                         AssemblyLabel nonVoidLabel,
-                         -- not isvoid
-                         StoreConst 0 $ attributeAddress TwacR.Rax 0,
-                         AssemblyLabel endLabel
-                       ]
-                )
+            set <- setBool TwacR.Rax JumpNonZero
+            pure $ instOnly (new ++ set)
           -- TODO: make this not *incredibly* janky, lol. This *only* handles in_int and out_int.
           Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs ->
             case dispatchMethod of
               "in_int" -> pure $ instOnly [Call $ Label "in_int"]
               "out_int" -> pure $ instOnly [Call $ Label "out_int"]
+              "out_string" -> pure $ instOnly [Call $ Label "out_string"]
           Twac.Jump label ->
             pure $ instOnly [Jump label]
           Twac.TwacLabel label ->
@@ -399,12 +403,14 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
 -- one way to do this. Using calloc instead of malloc means we can save the
 -- multiply/bit shift for libc instead of doing it ourselves, and that makes us
 -- happy.
-calloc :: Int -> [AssemblyStatement]
-calloc words =
-  [ LoadConst words TwacR.Rdi,
-    LoadConst 8 TwacR.Rsi,
+calloc :: Int -> Int -> [AssemblyStatement]
+calloc a b =
+  [ LoadConst a TwacR.Rdi,
+    LoadConst b TwacR.Rsi,
     Call $ Label "calloc"
   ]
+
+callocWords = calloc 8
 
 -- Sets a boolean based on a conditional jump passed in. If the conditional jump
 -- occurs, we set the boolean to true; otherwise, we leave it as false. Note, we

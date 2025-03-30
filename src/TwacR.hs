@@ -79,6 +79,24 @@ instance Show Register where
     R14 -> "%r14"
     R15 -> "%r15"
 
+showByte reg = case reg of
+  Rax -> "%al"
+  Rbx -> "%bl"
+  Rcx -> "%cl"
+  Rdx -> "%dl"
+  Rsi -> "%sil"
+  Rdi -> "%dil"
+  Rsp -> "%spl"
+  Rbp -> "%bpl"
+  R8 -> "%r8b"
+  R9 -> "%r9b"
+  R10 -> "%r10b"
+  R11 -> "%r11b"
+  R12 -> "%r12b"
+  R13 -> "%r13b"
+  R14 -> "%r14b"
+  R15 -> "%r15b"
+
 allRegisters = Set.fromList [Rax, Rbx, Rcx, Rdx, Rsi, Rsp, Rbp, R8, R9, R10, R11, R12, R13, R14, R15]
 
 paramRegisters = [Rdi, Rsi, Rdx, Rcx, R8, R9]

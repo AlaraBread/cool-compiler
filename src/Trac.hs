@@ -478,8 +478,8 @@ generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
                             case type' of
                               InputIr.Type "Int" -> 4
                               InputIr.Type "Bool" -> 4
-                              InputIr.Type "String" -> undefined
-                              _ -> (3 + length attrs)
+                              InputIr.Type "String" -> 5
+                              _ -> 3 + length attrs
                         )
                     )
                     0

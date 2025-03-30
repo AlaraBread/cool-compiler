@@ -131,8 +131,8 @@ inInt typeDetailsMap =
       TypeDetails tag size = typeDetailsMap Map.! InputIr.Type "Int"
    in ( [AssemblyLabel $ Label "in_int"]
           ++ callocWords size
-          ++ [ StoreConst (size * 8) (attributeAddress TwacR.Rax $ -3),
-               StoreConst tag (attributeAddress TwacR.Rax $ -2),
+          ++ [ StoreConst (size * 8) (sizeAddress TwacR.Rax),
+               StoreConst tag (typeTagAddress TwacR.Rax),
                Transfer TwacR.Rax TwacR.R14,
                LoadLabel formatLabel TwacR.Rdi,
                Lea (attributeAddress TwacR.R14 0) TwacR.Rsi,
@@ -246,6 +246,22 @@ getAddress registerParamCount variable = case variable of
       then Address (Just $ -8 * n - 56) TwacR.Rbp
       else Address (Just $ 8 * (n - 6) + 16) TwacR.Rbp
 
+-- Gives the base address of an object
+baseAddress :: TwacR.Register -> Address
+baseAddress = Address Nothing
+
+-- Gives the size address of an object
+sizeAddress :: TwacR.Register -> Address
+sizeAddress = Address (Just 0)
+
+-- Gives the type tag address of an object
+typeTagAddress :: TwacR.Register -> Address
+typeTagAddress = Address (Just 8)
+
+-- Gives the address of the ptr to the vtable of an object
+vtableAddress :: TwacR.Register -> Address
+vtableAddress = Address (Just 16)
+
 -- Gives the address of the nth attribute pointed to by the given register
 attributeAddress :: TwacR.Register -> Int -> Address
 attributeAddress reg n = Address (Just $ (n + 3) * 8) reg
@@ -354,8 +370,8 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                       ++ [ Transfer TwacR.Rax dst,
                            -- accessing negative attributes is a cursed, but
                            -- correct way of doing this.
-                           StoreConst (size * 8) (attributeAddress dst $ -3),
-                           StoreConst tag (attributeAddress dst $ -2)
+                           StoreConst (size * 8) (sizeAddress dst),
+                           StoreConst tag (typeTagAddress dst)
                          ]
           Twac.Default type' dst ->
             let delegateToNew = generateAssemblyStatements' $ TwacRStatement $ Twac.New type' dst

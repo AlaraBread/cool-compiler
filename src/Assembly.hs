@@ -22,6 +22,8 @@ data AssemblyStatement
   | Multiply TwacR.Register TwacR.Register
   | MultiplyConst Int TwacR.Register
   | Divide TwacR.Register
+  | ShiftALConst Int TwacR.Register
+  | ShiftARConst Int TwacR.Register
   | Cqto
   | Cmp TwacR.Register TwacR.Register
   | Test TwacR.Register TwacR.Register
@@ -69,6 +71,8 @@ instance Show AssemblyStatement where
           Multiply src dst -> binary "imulq" src dst
           MultiplyConst src dst -> binaryConst "imulq" src dst
           Divide src -> unary "idivq" src
+          ShiftALConst src dst -> binaryConst "salq" src dst
+          ShiftARConst src dst -> binaryConst "sarq" src dst
           Cqto -> indent "cqto"
           Cmp src dst -> binary "cmpq" src dst
           Test src dst -> binary "testq" src dst
@@ -530,6 +534,8 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
               instOnly
                 [ Load (attributeAddress src 0) r1,
                   Load (attributeAddress dst 0) TwacR.Rax,
+                  ShiftALConst 32 TwacR.Rax,
+                  ShiftARConst 32 TwacR.Rax,
                   Cqto,
                   Divide r1,
                   Store TwacR.Rax (attributeAddress dst 0)

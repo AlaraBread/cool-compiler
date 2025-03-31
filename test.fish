@@ -2,7 +2,7 @@
 
 set dir examples/pa3c3-subset
 
-mkdir test-out
+mkdir -p test-out
 
 set n 100
 

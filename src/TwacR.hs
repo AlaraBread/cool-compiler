@@ -97,6 +97,24 @@ showByte reg = case reg of
   R14 -> "%r14b"
   R15 -> "%r15b"
 
+show32 reg = case reg of
+  Rax -> "%eax"
+  Rbx -> "%ebx"
+  Rcx -> "%ecx"
+  Rdx -> "%edx"
+  Rsi -> "%esi"
+  Rdi -> "%edi"
+  Rsp -> "%esp"
+  Rbp -> "%ebp"
+  R8 -> "%r8d"
+  R9 -> "%r9d"
+  R10 -> "%r10d"
+  R11 -> "%r11d"
+  R12 -> "%r12d"
+  R13 -> "%r13d"
+  R14 -> "%r14d"
+  R15 -> "%r15d"
+
 allRegisters = Set.fromList [Rax, Rbx, Rcx, Rdx, Rsi, Rsp, Rbp, R8, R9, R10, R11, R12, R13, R14, R15]
 
 paramRegisters = [Rdi, Rsi, Rdx, Rcx, R8, R9]

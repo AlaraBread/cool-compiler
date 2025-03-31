@@ -17,21 +17,18 @@ import Util
 data AssemblyStatement
   = Add TwacR.Register TwacR.Register
   | AddImmediate Int TwacR.Register
+  | AddImmediate64 Int TwacR.Register
   | Subtract TwacR.Register TwacR.Register
   | SubtractImmediate Int TwacR.Register
+  | SubtractImmediate64 Int TwacR.Register
   | Multiply TwacR.Register TwacR.Register
-  | MultiplyConst Int TwacR.Register
   | Divide TwacR.Register
-  | ShiftALConst Int TwacR.Register
-  | ShiftARConst Int TwacR.Register
-  | Cqto
+  | Cdq
   | Cmp TwacR.Register TwacR.Register
   | Test TwacR.Register TwacR.Register
-  | TestConst TwacR.Register Integer
   | CmpConst Integer TwacR.Register
   | XorConst Integer TwacR.Register
   | Store TwacR.Register Address
-  | StoreByte TwacR.Register Address
   | StoreConst Int Address
   | Lea Address TwacR.Register
   | Load Address TwacR.Register
@@ -61,26 +58,28 @@ instance Show AssemblyStatement where
   show instruction =
     let indent = (++) "    "
         unary op arg = indent $ op ++ " " ++ show arg
+        unary32 op arg = indent $ op ++ " " ++ TwacR.show32 arg
+
         binary op src dst = indent $ op ++ " " ++ show src ++ ", " ++ show dst
+        binary32 op src dst = indent $ op ++ " " ++ TwacR.show32 src ++ ", " ++ TwacR.show32 dst
+
         binaryConst op src dst = indent $ op ++ " $" ++ show src ++ ", " ++ show dst
+        binaryConst32 op src dst = indent $ op ++ " $" ++ show src ++ ", " ++ TwacR.show32 dst
      in case instruction of
-          Add src dst -> binary "addq" src dst
-          AddImmediate src dst -> binaryConst "addq" src dst
-          Subtract src dst -> binary "subq" src dst
-          SubtractImmediate src dst -> binaryConst "subq" src dst
-          Multiply src dst -> binary "imulq" src dst
-          MultiplyConst src dst -> binaryConst "imulq" src dst
-          Divide src -> unary "idivq" src
-          ShiftALConst src dst -> binaryConst "salq" src dst
-          ShiftARConst src dst -> binaryConst "sarq" src dst
-          Cqto -> indent "cqto"
-          Cmp src dst -> binary "cmpq" src dst
-          Test src dst -> binary "testq" src dst
-          TestConst src dst -> binary "testq" src dst
-          CmpConst src dst -> binaryConst "cmpq" src dst
+          Add src dst -> binary32 "addl" src dst
+          AddImmediate src dst -> binaryConst32 "addl" src dst
+          AddImmediate64 src dst -> binaryConst "addq" src dst
+          Subtract src dst -> binary32 "subl" src dst
+          SubtractImmediate src dst -> binaryConst32 "subl" src dst
+          SubtractImmediate64 src dst -> binaryConst "subq" src dst
+          Multiply src dst -> binary32 "imull" src dst
+          Divide src -> unary32 "idivl" src
+          Cdq -> indent "cdq"
+          Cmp src dst -> binary32 "cmpl" src dst
+          Test src dst -> binary32 "testl" src dst
+          CmpConst src dst -> binaryConst32 "cmpl" src dst
           XorConst src dst -> binaryConst "xorq" src dst
           Store src dst -> binary "movq" src dst
-          StoreByte src dst -> indent $ "mov " ++ showByte src ++ ", " ++ show dst
           StoreConst src dst -> binaryConst "movq" src dst
           Lea src dst -> binary "leaq" src dst
           Load src dst -> binary "movq" src dst
@@ -90,7 +89,7 @@ instance Show AssemblyStatement where
           Push src -> unary "pushq" src
           Pop dst -> unary "popq" dst
           Not dst -> unary "notq" dst
-          Negate dst -> unary "negq" dst
+          Negate dst -> unary32 "negl" dst
           AssemblyLabel (Label label) -> label ++ ":"
           Call label -> unary "call" label
           DynamicCall label -> unary "call" label
@@ -164,9 +163,9 @@ inInt typeDetailsMap =
                LoadLabel formatLabel TwacR.Rdi,
                Lea (attributeAddress TwacR.R14 0) TwacR.Rsi,
                -- keep the stack 16-byte aligned
-               SubtractImmediate 8 TwacR.Rsp,
+               SubtractImmediate64 8 TwacR.Rsp,
                Call $ Label "scanf",
-               AddImmediate 8 TwacR.Rsp,
+               AddImmediate64 8 TwacR.Rsp,
                -- TODO: Should probably be a cmov, eventually
                Load (attributeAddress TwacR.R14 0) TwacR.R13,
                CmpConst 2147483647 TwacR.R13,
@@ -189,113 +188,13 @@ outInt =
           LoadLabel formatLabel TwacR.Rdi,
           Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
           -- keep the stack 16-byte aligned
-          SubtractImmediate 8 TwacR.Rsp,
+          SubtractImmediate64 8 TwacR.Rsp,
           Call $ Label "printf",
-          AddImmediate 8 TwacR.Rsp,
+          AddImmediate64 8 TwacR.Rsp,
           Return
         ],
         [StringConstant formatLabel "%d"]
       )
-
-inString registerParamCount typeDetailsMap =
-  do
-    let formatLabel = Label "in_string_format"
-        rawSystemCall = Label "raw_syscall"
-        cookedSystemCall = Label "cooked_syscall"
-        loop = Label "in_string_loop"
-        endLoop = Label "in_string_end_loop"
-        generateAssemblyStatements' = generateAssemblyStatements registerParamCount typeDetailsMap
-    (newString, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.Rax
-    pure
-      ( [ AssemblyLabel $ Label "in_string",
-          SubtractImmediate 8 TwacR.Rsp,
-          --
-          LoadLabel rawSystemCall TwacR.Rdi,
-          Call $ Label "system"
-        ]
-          ++ newString
-          ++ [ AssemblyLabel loop,
-               Push TwacR.Rdi,
-               Push TwacR.Rax,
-               Call $ Label "getchar",
-               Transfer TwacR.Rax TwacR.Rsi,
-               Pop TwacR.Rax,
-               Pop TwacR.Rdi,
-               CmpConst 13 TwacR.Rsi,
-               JumpZero endLoop,
-               Transfer TwacR.Rax TwacR.Rdi,
-               Push TwacR.Rdi,
-               Push TwacR.Rax,
-               Call $ Label "push_string",
-               Pop TwacR.Rax,
-               Pop TwacR.Rdi,
-               Jump loop,
-               --
-               AssemblyLabel endLoop,
-               AddImmediate 8 TwacR.Rsp,
-               Push TwacR.Rdi,
-               LoadLabel cookedSystemCall TwacR.Rdi,
-               Call $ Label "system",
-               Pop TwacR.Rdi,
-               Transfer TwacR.Rdi TwacR.Rax,
-               Return
-             ],
-        [ StringConstant rawSystemCall "/bin/stty raw",
-          StringConstant cookedSystemCall "/bin/stty cooked"
-        ]
-      )
-
-pushString :: State Temporary ([AssemblyStatement], [AssemblyData])
-pushString = do
-  dontExpand <- getLabel
-  copyLoop <- getLabel
-  endCopyLoop <- getLabel
-  pure
-    ( [ AssemblyLabel $ Label "push_string",
-        SubtractImmediate 8 TwacR.Rsp,
-        Load (attributeAddress TwacR.Rdi 2) TwacR.Rdx, -- capacity
-        Load (attributeAddress TwacR.Rdi 1) TwacR.Rcx, -- length
-        Cmp TwacR.Rcx TwacR.Rdx,
-        JumpGreaterThan dontExpand,
-        -- we need to expand the string
-        AddImmediate 4 TwacR.Rdx, -- handle case of capacity 0
-        MultiplyConst 2 TwacR.Rdx,
-        Store TwacR.Rdx (attributeAddress TwacR.Rdi 2), -- store new capacity
-        -- new allocation
-        Push TwacR.Rdx,
-        Push TwacR.Rcx,
-        Push TwacR.Rsi,
-        Push TwacR.Rdi,
-        LoadConst 1 TwacR.Rdi,
-        Transfer TwacR.Rdx TwacR.Rsi,
-        Call $ Label "calloc",
-        Pop TwacR.Rdi,
-        Pop TwacR.Rsi,
-        Pop TwacR.Rcx,
-        Pop TwacR.Rdx,
-        --
-        Load (attributeAddress TwacR.Rdi 0) TwacR.Rdx, -- old string pointer
-        Store TwacR.Rax (attributeAddress TwacR.Rdi 0), -- set new string pointer
-        LoadConst 0 TwacR.R8,
-        AssemblyLabel copyLoop,
-        Cmp TwacR.R8 TwacR.Rcx,
-        JumpLessThanEqual endCopyLoop,
-        LoadByte (Address (Just 0) TwacR.Rdx (Just TwacR.R8) (Just 1)) TwacR.R9,
-        AssemblyLabel $ Label "storebyte",
-        StoreByte TwacR.R9 $ Address (Just 0) TwacR.Rax (Just TwacR.R8) (Just 1),
-        AddImmediate 1 TwacR.R8,
-        Jump copyLoop,
-        AssemblyLabel endCopyLoop,
-        AssemblyLabel dontExpand,
-        -- there is definetly space in the string for another character now
-        StoreByte TwacR.Rsi $ Address (Just 0) TwacR.Rax (Just TwacR.Rcx) (Just 1),
-        AddImmediate 1 TwacR.Rcx,
-        Store TwacR.Rcx $ attributeAddress TwacR.Rdi 1,
-        AddImmediate 8 TwacR.Rsp,
-        Return
-      ],
-      []
-    )
 
 outString =
   let loop = Label "out_string_loop"
@@ -382,22 +281,20 @@ outString =
 generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
 generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.constructorMap, TwacR.typeDetailsMap} =
   uncurry AssemblyIr $
-    evalState
-      ( combineAssembly'
-          [ pure main',
-            pure $ inInt typeDetailsMap,
-            pure outInt,
-            pure outString,
-            inString 0 typeDetailsMap,
-            pushString,
-            do
+    combineAssembly
+      [ main',
+        inInt typeDetailsMap,
+        outInt,
+        outString,
+        evalState
+          ( do
               let methodList = map snd $ Map.toList implementationMap
               x <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
               let (code, data') = traverse combineAssembly x
               pure (code, concat data')
-          ]
-      )
-      temporaryState
+          )
+          temporaryState
+      ]
 
 generateAssemblyMethod :: TypeDetailsMap -> TwacR.TwacRMethod -> State Temporary ([AssemblyStatement], [AssemblyData])
 generateAssemblyMethod typeDetailsMap method = do
@@ -416,13 +313,6 @@ combineAssembly asm =
   let statements = concatMap fst asm
       data' = concatMap snd asm
    in (statements, data')
-
-combineAssembly' :: [State Temporary ([AssemblyStatement], [AssemblyData])] -> State Temporary ([AssemblyStatement], [AssemblyData])
-combineAssembly' asm = do
-  a <- sequence asm
-  let statements = concatMap fst a
-  let data' = concatMap snd a
-  pure (statements, data')
 
 -- Let n be the number of arguments.
 -- Let r be the number of register arguments.
@@ -501,9 +391,9 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
         TwacR.Pop dst ->
           pure $ instOnly [Pop dst]
         TwacR.AllocateStackSpace words ->
-          pure $ instOnly [SubtractImmediate (words * 8) TwacR.Rsp]
+          pure $ instOnly [SubtractImmediate64 (words * 8) TwacR.Rsp]
         TwacR.DeallocateStackSpace words ->
-          pure $ instOnly [AddImmediate (words * 8) TwacR.Rsp]
+          pure $ instOnly [AddImmediate64 (words * 8) TwacR.Rsp]
         TwacR.TwacRStatement twacStatement -> case twacStatement of
           Twac.Add src dst ->
             pure $
@@ -534,9 +424,7 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
               instOnly
                 [ Load (attributeAddress src 0) r1,
                   Load (attributeAddress dst 0) TwacR.Rax,
-                  ShiftALConst 32 TwacR.Rax,
-                  ShiftARConst 32 TwacR.Rax,
-                  Cqto,
+                  Cdq,
                   Divide r1,
                   Store TwacR.Rax (attributeAddress dst 0)
                 ]
@@ -581,8 +469,7 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
               ( construction
                   ++ [ LoadLabel stringLabel r1,
                        Store r1 (attributeAddress dst 0),
-                       StoreConst (length s) (attributeAddress dst 1),
-                       StoreConst (length s) (attributeAddress dst 2)
+                       StoreConst (length s) (attributeAddress dst 1)
                      ],
                 [StringConstant stringLabel s]
               )
@@ -637,7 +524,6 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
               "in_int" -> pure $ instOnly [Call $ Label "in_int"]
               "out_int" -> pure $ instOnly [Call $ Label "out_int"]
               "out_string" -> pure $ instOnly [Call $ Label "out_string"]
-              "in_string" -> pure $ instOnly [Call $ Label "in_string"]
           Twac.Jump label ->
             pure $ instOnly [Jump label]
           Twac.TwacLabel label ->

@@ -23,6 +23,7 @@ data AssemblyStatement
   | SubtractImmediate Int TwacR.Register
   | SubtractImmediate64 Int TwacR.Register
   | Multiply TwacR.Register TwacR.Register
+  | MultiplyConst Int TwacR.Register
   | Divide TwacR.Register
   | Cdq
   | Cmp TwacR.Register TwacR.Register
@@ -30,6 +31,7 @@ data AssemblyStatement
   | CmpConst Integer TwacR.Register
   | XorConst Integer TwacR.Register
   | Store TwacR.Register Address
+  | StoreByte TwacR.Register Address
   | StoreConst Int Address
   | Lea Address TwacR.Register
   | Load Address TwacR.Register
@@ -74,6 +76,7 @@ instance Show AssemblyStatement where
           SubtractImmediate src dst -> binaryConst32 "subl" src dst
           SubtractImmediate64 src dst -> binaryConst "subq" src dst
           Multiply src dst -> binary32 "imull" src dst
+          MultiplyConst src dst -> binaryConst "imulq" src dst
           Divide src -> unary32 "idivl" src
           Cdq -> indent "cdq"
           Cmp src dst -> binary32 "cmpl" src dst
@@ -81,6 +84,7 @@ instance Show AssemblyStatement where
           CmpConst src dst -> binaryConst32 "cmpl" src dst
           XorConst src dst -> binaryConst "xorq" src dst
           Store src dst -> binary "movq" src dst
+          StoreByte src dst -> indent $ "mov " ++ showByte src ++ ", " ++ show dst
           StoreConst src dst -> binaryConst "movq" src dst
           Lea src dst -> binary "leaq" src dst
           Load src dst -> binary "movq" src dst
@@ -146,150 +150,6 @@ data AssemblyIr = AssemblyIr
 instance Show AssemblyIr where
   show (AssemblyIr code data') = unlines (map show data') ++ "\n\n.globl main\n" ++ unlines (map show code)
 
-main' :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
-main' typeDetailsMap =
-  let type' = InputIr.Type "Main"
-   in combineAssembly
-        <$> mapM
-          (generateAssemblyStatements 1 typeDetailsMap)
-          [ TwacRStatement $ Twac.TwacLabel $ Label "main",
-            TwacRStatement $ Twac.New type' TwacR.Rdi,
-            TwacR.AllocateStackSpace 1,
-            TwacRStatement $ Twac.Dispatch TwacR.R10 TwacR.Rdi type' Nothing "main" [TwacR.Rdi],
-            TwacR.DeallocateStackSpace 1,
-            TwacRStatement $ Twac.Return TwacR.Rax
-          ]
-
--- TODO: write error handling here
-inInt typeDetailsMap =
-  let formatLabel = Label "in_int_format"
-      overflowLabel = Label "in_int_overflow"
-      noOverflowLabel = Label "in_int_no_overflow"
-      TypeDetails tag size _ = typeDetailsMap Map.! InputIr.Type "Int"
-   in ( [AssemblyLabel $ Label "in_int"]
-          -- since we calloc, the integer starts at zero
-          ++ callocWords size
-          ++ [ StoreConst (size * 8) (sizeAddress TwacR.Rax),
-               StoreConst tag (typeTagAddress TwacR.Rax),
-               Transfer TwacR.Rax TwacR.R14,
-               LoadLabel formatLabel TwacR.Rdi,
-               Lea (attributeAddress TwacR.R14 0) TwacR.Rsi,
-               -- keep the stack 16-byte aligned
-               SubtractImmediate64 8 TwacR.Rsp,
-               Call $ Label "scanf",
-               AddImmediate64 8 TwacR.Rsp,
-               -- TODO: Should probably be a cmov, eventually
-               Load (attributeAddress TwacR.R14 0) TwacR.R13,
-               CmpConst 2147483647 TwacR.R13,
-               JumpGreaterThan overflowLabel,
-               CmpConst (-2147483648) TwacR.R13,
-               JumpLessThan overflowLabel,
-               Jump noOverflowLabel,
-               AssemblyLabel overflowLabel,
-               StoreConst 0 (attributeAddress TwacR.R14 0),
-               AssemblyLabel noOverflowLabel,
-               Transfer TwacR.R14 TwacR.Rax,
-               Return
-             ],
-        [StringConstant formatLabel "%ld"]
-      )
-
-outInt =
-  let formatLabel = Label "out_int_format"
-   in ( [ AssemblyLabel $ Label "out_int",
-          LoadLabel formatLabel TwacR.Rdi,
-          Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
-          -- keep the stack 16-byte aligned
-          SubtractImmediate64 8 TwacR.Rsp,
-          Call $ Label "printf",
-          AddImmediate64 8 TwacR.Rsp,
-          Return
-        ],
-        [StringConstant formatLabel "%d"]
-      )
-
-outString =
-  let loop = Label "out_string_loop"
-      nonBackslash = Label "out_string_non_backslash"
-      notEscapeSequence = Label "out_string_not_escape"
-      notPrevBackslash = Label "out_string_not_prev_backslash"
-      nonNewline = Label "out_string_newline"
-      afterCall = Label "out_string_after_call"
-      end = Label "out_string_end"
-   in ( [ AssemblyLabel $ Label "out_string",
-          Load (attributeAddress TwacR.Rsi 0) TwacR.R8,
-          Load (attributeAddress TwacR.Rsi 1) TwacR.Rcx,
-          LoadConst 0 TwacR.Rsi, -- keep track of backslashes
-          LoadConst 0 TwacR.Rdx, -- loop counter
-          AssemblyLabel loop,
-          LoadConst 0 TwacR.Rdi,
-          LoadByte (Address Nothing TwacR.R8 (Just TwacR.Rdx) (Just 1)) TwacR.Rdi,
-          CmpConst 0 TwacR.Rsi,
-          JumpZero notPrevBackslash,
-          -- previous character was a backslash
-          LoadConst 0 TwacR.Rsi, -- reset flag
-          CmpConst (toInteger $ ord 'n') TwacR.Rdi,
-          JumpNonZero nonNewline,
-          -- prev was a backslash and current is a 'n'
-          LoadConst (ord '\n') TwacR.Rdi,
-          Jump nonBackslash,
-          AssemblyLabel nonNewline,
-          -- prev character was a backslash but cur isnt 'n'
-          CmpConst (toInteger $ ord 't') TwacR.Rdi,
-          JumpNonZero notEscapeSequence,
-          -- prev character was backslash and cur is 't'
-          LoadConst (ord '\t') TwacR.Rdi,
-          Jump nonBackslash,
-          AssemblyLabel notEscapeSequence,
-          -- prev was backslash, current char isnt an escape sequence
-          -- need to output an extra backslash
-          Push TwacR.Rcx,
-          Push TwacR.Rdi,
-          Push TwacR.Rsi,
-          Push TwacR.Rdx,
-          Push TwacR.R8,
-          LoadConst (ord '\\') TwacR.Rdi,
-          Call $ Label "putchar",
-          Pop TwacR.R8,
-          Pop TwacR.Rdx,
-          Pop TwacR.Rsi,
-          Pop TwacR.Rdi,
-          Pop TwacR.Rcx,
-          AssemblyLabel notPrevBackslash,
-          CmpConst (toInteger $ ord '\\') TwacR.Rdi,
-          JumpNonZero nonBackslash,
-          -- cur character is backslash
-          LoadConst 1 TwacR.Rsi,
-          Jump afterCall,
-          AssemblyLabel nonBackslash,
-          Push TwacR.Rcx,
-          Push TwacR.Rdi,
-          Push TwacR.Rsi,
-          Push TwacR.Rdx,
-          Push TwacR.R8,
-          Call $ Label "putchar",
-          Pop TwacR.R8,
-          Pop TwacR.Rdx,
-          Pop TwacR.Rsi,
-          Pop TwacR.Rdi,
-          Pop TwacR.Rcx,
-          AssemblyLabel afterCall,
-          AddImmediate 1 TwacR.Rdx,
-          Cmp TwacR.Rcx TwacR.Rdx,
-          JumpLessThan loop,
-          CmpConst 0 TwacR.Rsi,
-          JumpZero end,
-          -- ended the loop with a backslash buffered, need to output it
-          Push TwacR.R8, -- just need to push something for parity here
-          LoadConst (ord '\\') TwacR.Rdi,
-          Call $ Label "putchar",
-          Pop TwacR.R8,
-          AssemblyLabel end,
-          Return
-        ],
-        []
-      )
-
 generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
 generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.typeDetailsMap} =
   uncurry AssemblyIr $
@@ -337,6 +197,13 @@ combineAssembly asm =
   let statements = concatMap fst asm
       data' = concatMap snd asm
    in (statements, data')
+
+combineAssembly' :: [State Temporary ([AssemblyStatement], [AssemblyData])] -> State Temporary ([AssemblyStatement], [AssemblyData])
+combineAssembly' asm = do
+  a <- sequence asm
+  let statements = concatMap fst a
+  let data' = concatMap snd a
+  pure (statements, data')
 
 -- Let n be the number of arguments.
 -- Let r be the number of register arguments.
@@ -496,7 +363,8 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
               ( construction
                   ++ [ LoadLabel stringLabel r1,
                        Store r1 (attributeAddress dst 0),
-                       StoreConst (length s) (attributeAddress dst 1)
+                       StoreConst (length s) (attributeAddress dst 1),
+                       StoreConst (length s) (attributeAddress dst 2)
                      ],
                 [StringConstant stringLabel s]
               )
@@ -652,3 +520,254 @@ setBool boolReg conditionalJump = do
 -- asm strings can have escape codes
 sanitizeString :: String -> String
 sanitizeString = concatMap (\c -> if c == '\\' then "\\\\" else [c])
+
+-- haskell doesn't like circular dependencies 😭
+
+main' :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
+main' typeDetailsMap =
+  let type' = InputIr.Type "Main"
+   in combineAssembly
+        <$> mapM
+          (generateAssemblyStatements 1 typeDetailsMap)
+          [ TwacRStatement $ Twac.TwacLabel $ Label "main",
+            TwacRStatement $ Twac.New type' TwacR.Rdi,
+            TwacR.AllocateStackSpace 1,
+            TwacRStatement $ Twac.Dispatch TwacR.R10 TwacR.Rdi type' Nothing "main" [TwacR.Rdi],
+            TwacR.DeallocateStackSpace 1,
+            TwacRStatement $ Twac.Return TwacR.Rax
+          ]
+
+-- TODO: write error handling here
+inInt typeDetailsMap =
+  let formatLabel = Label "in_int_format"
+      overflowLabel = Label "in_int_overflow"
+      noOverflowLabel = Label "in_int_no_overflow"
+      TypeDetails tag size _ = typeDetailsMap Map.! InputIr.Type "Int"
+   in ( [AssemblyLabel $ Label "in_int"]
+          -- since we calloc, the integer starts at zero
+          ++ callocWords size
+          ++ [ StoreConst (size * 8) (sizeAddress TwacR.Rax),
+               StoreConst tag (typeTagAddress TwacR.Rax),
+               Transfer TwacR.Rax TwacR.R14,
+               LoadLabel formatLabel TwacR.Rdi,
+               Lea (attributeAddress TwacR.R14 0) TwacR.Rsi,
+               -- keep the stack 16-byte aligned
+               SubtractImmediate64 8 TwacR.Rsp,
+               Call $ Label "scanf",
+               AddImmediate64 8 TwacR.Rsp,
+               -- TODO: Should probably be a cmov, eventually
+               Load (attributeAddress TwacR.R14 0) TwacR.R13,
+               CmpConst 2147483647 TwacR.R13,
+               JumpGreaterThan overflowLabel,
+               CmpConst (-2147483648) TwacR.R13,
+               JumpLessThan overflowLabel,
+               Jump noOverflowLabel,
+               AssemblyLabel overflowLabel,
+               StoreConst 0 (attributeAddress TwacR.R14 0),
+               AssemblyLabel noOverflowLabel,
+               Transfer TwacR.R14 TwacR.Rax,
+               Return
+             ],
+        [StringConstant formatLabel "%ld"]
+      )
+
+outInt =
+  let formatLabel = Label "out_int_format"
+   in ( [ AssemblyLabel $ Label "out_int",
+          LoadLabel formatLabel TwacR.Rdi,
+          Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
+          -- keep the stack 16-byte aligned
+          SubtractImmediate64 8 TwacR.Rsp,
+          Call $ Label "printf",
+          AddImmediate64 8 TwacR.Rsp,
+          Return
+        ],
+        [StringConstant formatLabel "%d"]
+      )
+
+outString =
+  let loop = Label "out_string_loop"
+      nonBackslash = Label "out_string_non_backslash"
+      notEscapeSequence = Label "out_string_not_escape"
+      notPrevBackslash = Label "out_string_not_prev_backslash"
+      nonNewline = Label "out_string_newline"
+      afterCall = Label "out_string_after_call"
+      end = Label "out_string_end"
+   in ( [ AssemblyLabel $ Label "out_string",
+          Load (attributeAddress TwacR.Rsi 0) TwacR.R8,
+          Load (attributeAddress TwacR.Rsi 1) TwacR.Rcx,
+          LoadConst 0 TwacR.Rsi, -- keep track of backslashes
+          LoadConst 0 TwacR.Rdx, -- loop counter
+          AssemblyLabel loop,
+          LoadConst 0 TwacR.Rdi,
+          LoadByte (Address Nothing TwacR.R8 (Just TwacR.Rdx) (Just 1)) TwacR.Rdi,
+          CmpConst 0 TwacR.Rsi,
+          JumpZero notPrevBackslash,
+          -- previous character was a backslash
+          LoadConst 0 TwacR.Rsi, -- reset flag
+          CmpConst (toInteger $ ord 'n') TwacR.Rdi,
+          JumpNonZero nonNewline,
+          -- prev was a backslash and current is a 'n'
+          LoadConst (ord '\n') TwacR.Rdi,
+          Jump nonBackslash,
+          AssemblyLabel nonNewline,
+          -- prev character was a backslash but cur isnt 'n'
+          CmpConst (toInteger $ ord 't') TwacR.Rdi,
+          JumpNonZero notEscapeSequence,
+          -- prev character was backslash and cur is 't'
+          LoadConst (ord '\t') TwacR.Rdi,
+          Jump nonBackslash,
+          AssemblyLabel notEscapeSequence,
+          -- prev was backslash, current char isnt an escape sequence
+          -- need to output an extra backslash
+          Push TwacR.Rcx,
+          Push TwacR.Rdi,
+          Push TwacR.Rsi,
+          Push TwacR.Rdx,
+          Push TwacR.R8,
+          LoadConst (ord '\\') TwacR.Rdi,
+          Call $ Label "putchar",
+          Pop TwacR.R8,
+          Pop TwacR.Rdx,
+          Pop TwacR.Rsi,
+          Pop TwacR.Rdi,
+          Pop TwacR.Rcx,
+          AssemblyLabel notPrevBackslash,
+          CmpConst (toInteger $ ord '\\') TwacR.Rdi,
+          JumpNonZero nonBackslash,
+          -- cur character is backslash
+          LoadConst 1 TwacR.Rsi,
+          Jump afterCall,
+          AssemblyLabel nonBackslash,
+          Push TwacR.Rcx,
+          Push TwacR.Rdi,
+          Push TwacR.Rsi,
+          Push TwacR.Rdx,
+          Push TwacR.R8,
+          Call $ Label "putchar",
+          Pop TwacR.R8,
+          Pop TwacR.Rdx,
+          Pop TwacR.Rsi,
+          Pop TwacR.Rdi,
+          Pop TwacR.Rcx,
+          AssemblyLabel afterCall,
+          AddImmediate 1 TwacR.Rdx,
+          Cmp TwacR.Rcx TwacR.Rdx,
+          JumpLessThan loop,
+          CmpConst 0 TwacR.Rsi,
+          JumpZero end,
+          -- ended the loop with a backslash buffered, need to output it
+          Push TwacR.R8, -- just need to push something for parity here
+          LoadConst (ord '\\') TwacR.Rdi,
+          Call $ Label "putchar",
+          Pop TwacR.R8,
+          AssemblyLabel end,
+          Return
+        ],
+        []
+      )
+
+inString registerParamCount typeDetailsMap =
+  do
+    let formatLabel = Label "in_string_format"
+        loop = Label "in_string_loop"
+        endLoop = Label "in_string_end_loop"
+        generateAssemblyStatements' = generateAssemblyStatements registerParamCount typeDetailsMap
+    (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.Rax
+    pure
+      ( [ AssemblyLabel $ Label "in_string",
+          SubtractImmediate64 8 TwacR.Rsp
+        ]
+          ++ newString
+          ++ [ AssemblyLabel loop,
+               Push TwacR.Rdi,
+               Push TwacR.Rax,
+               Call $ Label "getchar",
+               Transfer TwacR.Rax TwacR.Rsi,
+               Pop TwacR.Rax,
+               Pop TwacR.Rdi,
+               CmpConst (toInteger $ ord '\n') TwacR.Rsi,
+               JumpZero endLoop,
+               CmpConst (-1) TwacR.Rsi,
+               JumpZero endLoop,
+               Transfer TwacR.Rax TwacR.Rdi,
+               Push TwacR.Rdi,
+               Push TwacR.Rax,
+               Call $ Label "push_string",
+               Pop TwacR.Rax,
+               Pop TwacR.Rdi,
+               Jump loop,
+               --
+               AssemblyLabel endLoop,
+               AddImmediate64 8 TwacR.Rsp,
+               Transfer TwacR.Rdi TwacR.Rax,
+               Return
+             ],
+        []
+      )
+
+pushString :: State Temporary ([AssemblyStatement], [AssemblyData])
+pushString = do
+  dontExpand <- getLabel
+  copyLoop <- getLabel
+  endCopyLoop <- getLabel
+  nonNull <- getLabel
+  pure
+    ( [ AssemblyLabel $ Label "push_string",
+        SubtractImmediate64 8 TwacR.Rsp,
+        Load (attributeAddress TwacR.Rdi 0) TwacR.R9, -- string pointer
+        CmpConst 0 TwacR.R9,
+        JumpZero nonNull,
+        -- string pointer is null, lets make an allocation for it
+        Push TwacR.Rdi,
+        Push TwacR.Rsi,
+        LoadConst 1 TwacR.Rdi,
+        LoadConst 32 TwacR.Rsi,
+        Call $ Label "calloc",
+        Store TwacR.Rax (attributeAddress TwacR.Rdi 0),
+        Pop TwacR.Rsi,
+        Pop TwacR.Rdi,
+        StoreConst 32 (attributeAddress TwacR.Rdi 2), -- store capacity
+        AssemblyLabel nonNull,
+        Load (attributeAddress TwacR.Rdi 2) TwacR.Rdx, -- capacity
+        Load (attributeAddress TwacR.Rdi 1) TwacR.Rcx, -- length
+        Cmp TwacR.Rcx TwacR.Rdx,
+        JumpGreaterThan dontExpand,
+        -- we need to expand the string
+        AddImmediate 4 TwacR.Rdx, -- handle case of capacity 0
+        MultiplyConst 2 TwacR.Rdx,
+        -- new allocation
+        Push TwacR.Rdx,
+        Push TwacR.Rcx,
+        Push TwacR.Rsi,
+        Push TwacR.Rdi,
+        LoadConst 1 TwacR.Rdi,
+        Transfer TwacR.Rdx TwacR.Rsi,
+        Call $ Label "calloc",
+        Pop TwacR.Rdi,
+        Pop TwacR.Rsi,
+        Pop TwacR.Rcx,
+        Pop TwacR.Rdx,
+        --
+        Load (attributeAddress TwacR.Rdi 0) TwacR.Rdx, -- old string pointer
+        Store TwacR.Rax (attributeAddress TwacR.Rdi 0), -- set new string pointer
+        Store TwacR.Rdx (attributeAddress TwacR.Rdi 2), -- store new capacity
+        LoadConst 0 TwacR.R8,
+        AssemblyLabel copyLoop,
+        Cmp TwacR.R8 TwacR.Rcx,
+        JumpLessThanEqual endCopyLoop,
+        LoadByte (Address (Just 0) TwacR.Rdx (Just TwacR.R8) (Just 1)) TwacR.R9,
+        StoreByte TwacR.R9 $ Address (Just 0) TwacR.Rax (Just TwacR.R8) (Just 1),
+        AddImmediate 1 TwacR.R8,
+        Jump copyLoop,
+        AssemblyLabel endCopyLoop,
+        AssemblyLabel dontExpand,
+        -- there is definetly space in the string for another character now
+        StoreByte TwacR.Rsi $ Address (Just 0) TwacR.Rax (Just TwacR.Rcx) (Just 1),
+        AddImmediate 1 TwacR.Rcx,
+        Store TwacR.Rcx $ attributeAddress TwacR.Rdi 1,
+        AddImmediate64 8 TwacR.Rsp,
+        Return
+      ],
+      []
+    )

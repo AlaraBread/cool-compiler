@@ -482,7 +482,7 @@ generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
                             ( case type' of
                                 InputIr.Type "Int" -> 4
                                 InputIr.Type "Bool" -> 4
-                                InputIr.Type "String" -> 5
+                                InputIr.Type "String" -> 6
                                 InputIr.Type _ -> 3 + length attrs
                             )
                             $ Map.fromList

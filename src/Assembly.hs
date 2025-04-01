@@ -7,6 +7,7 @@ import Data.Char (ord)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe, maybe)
 import Distribution.Compat.CharParsing (CharParsing (string))
+import InputIr (ImplementationMapEntry)
 import qualified InputIr
 import Trac (Label (..), Temporary (Temporary), TypeDetails (TypeDetails, typeSize), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getLabel, getVariable)
 import qualified Twac
@@ -109,8 +110,7 @@ data AssemblyData
   = JumpTable Label [Label]
   | StringConstant Label String
   | VTable
-      { vTableTypeName :: Label,
-        vTableTypeId :: Integer,
+      { vTableLabel :: Label,
         vTableMethods :: [Label]
       }
 
@@ -118,6 +118,8 @@ data AssemblyData
 instance Show AssemblyData where
   show data' = case data' of
     StringConstant label text -> show label ++ ": .string \"" ++ sanitizeString text ++ "\""
+    -- this is directly taken from the reference compiler
+    VTable label entries -> show label ++ ":\n" ++ unlines (map ((++) "    .quad " . show) entries)
 
 data Address = Address
   { addressOffset :: Maybe Int,
@@ -282,7 +284,8 @@ generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
 generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.constructorMap, TwacR.typeDetailsMap} =
   uncurry AssemblyIr $
     combineAssembly
-      [ main',
+      [ combineAssembly $ generateVTable typeDetailsMap <$> Map.toList implementationMap,
+        main',
         inInt typeDetailsMap,
         outInt,
         outString,
@@ -295,6 +298,19 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.co
           )
           temporaryState
       ]
+
+generateVTable :: TypeDetailsMap -> (InputIr.Type, [ImplementationMapEntry TwacR.TwacRMethod]) -> ([AssemblyStatement], [AssemblyData])
+generateVTable typeDetailsMap (InputIr.Type selfType, entries) =
+  let vTableMethod :: ImplementationMapEntry TwacR.TwacRMethod -> Label
+      vTableMethod (InputIr.LocalImpl m) = Label $ selfType ++ "." ++ TwacR.methodName m
+      vTableMethod (InputIr.ParentImpl (InputIr.Type parentType) m) = Label $ parentType ++ "." ++ m
+   in ( [],
+        [ VTable
+            { vTableLabel = Label $ selfType ++ "..vtable",
+              vTableMethods = map vTableMethod entries
+            }
+        ]
+      )
 
 generateAssemblyMethod :: TypeDetailsMap -> TwacR.TwacRMethod -> State Temporary ([AssemblyStatement], [AssemblyData])
 generateAssemblyMethod typeDetailsMap method = do

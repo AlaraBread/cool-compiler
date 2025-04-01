@@ -47,8 +47,6 @@
 
    vtable     
   ------------
-   &type_name 
-   &type_id   
    &method1   
    ...        
    &methodn   

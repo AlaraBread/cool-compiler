@@ -20,7 +20,7 @@ data TracIr = TracIr
 type TypeDetailsMap = Map.Map InputIr.Type TypeDetails
 
 -- Type size is in words.
-data TypeDetails = TypeDetails {typeTag :: Int, typeSize :: Int}
+data TypeDetails = TypeDetails {typeTag :: Int, typeSize :: Int, methodTags :: Map.Map String Int}
   deriving (Show)
 
 data TracMethod = TracMethod {methodName :: String, body :: Trac, formals :: [InputIr.Formal], temporaryCount :: Int}
@@ -59,6 +59,7 @@ data TracStatement
   | ConditionalJump Variable Label
   | Assign Variable Variable
   | Case Variable (Trac, Variable) [CaseElement]
+  | TracInternal InputIr.Internal
 
 data CaseElement = CaseElement InputIr.Type (Trac, Variable)
 
@@ -93,6 +94,7 @@ instance Show TracStatement where
     ConditionalJump a l -> "bt " ++ show a ++ " " ++ show l
     Assign a b -> show a ++ " <- " ++ show b
     Case v e elements -> "comment case :3" -- dont bother outputting case statements for now
+    TracInternal internal -> "internal: " ++ show internal
 
 showBinary :: Variable -> Variable -> Variable -> String -> String
 showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c
@@ -356,16 +358,7 @@ generateTracExpr
                 )
                 elements
             pure (eTrac, eV)
-          InputIr.IOInInt -> ([lined' $ Comment "IO.in_int"],) <$> getVariable
-          InputIr.IOInString -> ([lined' $ Comment "IO.in_string"],) <$> getVariable
-          InputIr.IOOutInt -> ([lined' $ Comment "IO.out_int"],) <$> getVariable
-          InputIr.IOOutString -> ([lined' $ Comment "IO.out_string"],) <$> getVariable
-          InputIr.ObjectAbort -> ([lined' $ Comment "Object.abort"],) <$> getVariable
-          InputIr.ObjectCopy -> ([lined' $ Comment "Object.copy"],) <$> getVariable
-          InputIr.ObjectTypeName -> ([lined' $ Comment "Object.type_name"],) <$> getVariable
-          InputIr.StringConcat -> ([lined' $ Comment "String.concat"],) <$> getVariable
-          InputIr.StringLength -> ([lined' $ Comment "String.length"],) <$> getVariable
-          InputIr.StringSubstr -> ([lined' $ Comment "String.substr"],) <$> getVariable
+          InputIr.InputInternal internal -> ([Lined 0 $ TracInternal internal],) <$> getVariable
           InputIr.Constructor -> do
             constructor <- generateTracConstructor classMap selfType
             eV <- getVariable
@@ -416,6 +409,8 @@ generateAttributeMap attributes =
 
 generateTracMethod :: InputIr.ClassMap -> [InputIr.Attribute] -> InputIr.Type -> InputIr.Method -> State Temporary TracMethod
 generateTracMethod classMap attributes type' (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
+  modify (\(Trac.Temporary l t) -> Trac.Temporary l 0)
+
   let temporaryMap = Map.empty
 
   let paramNames = "self" : map (InputIr.lexeme . InputIr.formalName) methodFormals
@@ -428,13 +423,17 @@ generateTracMethod classMap attributes type' (InputIr.Method {InputIr.methodName
   (trac, v) <- generateTracExpr classMap bindingMap type' methodBody
   temporaryCount' <- gets (\(Temporary l t) -> t)
   let InputIr.Type typeName = type'
-  pure
-    TracMethod
-      { methodName = InputIr.lexeme methodName,
-        body = trac ++ [Lined (InputIr.line methodName) $ Return v],
-        formals = methodFormals,
-        temporaryCount = temporaryCount'
-      }
+      -- Do not touch internal instructions
+      body = case trac of
+        [Lined _ (TracInternal _)] -> trac
+        t -> t ++ [Lined (InputIr.line methodName) $ Return v]
+   in pure
+        TracMethod
+          { methodName = InputIr.lexeme methodName,
+            body,
+            formals = methodFormals,
+            temporaryCount = temporaryCount'
+          }
 
 generateTracConstructor :: InputIr.ClassMap -> InputIr.Type -> State Temporary Trac
 generateTracConstructor classMap selfType = do
@@ -478,12 +477,18 @@ generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
                   Map.mapAccumWithKey
                     ( \tag type' attrs ->
                         ( tag + 1,
-                          TypeDetails tag $
-                            case type' of
-                              InputIr.Type "Int" -> 4
-                              InputIr.Type "Bool" -> 4
-                              InputIr.Type "String" -> 5
-                              _ -> 3 + length attrs
+                          TypeDetails
+                            tag
+                            ( case type' of
+                                InputIr.Type "Int" -> 4
+                                InputIr.Type "Bool" -> 4
+                                InputIr.Type "String" -> 5
+                                InputIr.Type _ -> 3 + length attrs
+                            )
+                            $ Map.fromList
+                            $ zip
+                              (map (InputIr.implementationMapEntryName ((\(InputIr.Identifier _ s) -> s) . InputIr.methodName)) $ implMap Map.! type')
+                              [0 ..]
                         )
                     )
                     0

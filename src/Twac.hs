@@ -55,6 +55,7 @@ data TwacStatement v
   | Copy v v
   | TwacCase v CaseJmpTable
   | Abort Int String
+  | TwacInternal InputIr.Internal
 
 -- NOTE: this should include *every single* type.
 type CaseJmpTable = Map.Map Type Label
@@ -101,6 +102,7 @@ instance (Show v) => Show (TwacStatement v) where
           -- TODO: this is incomplete
           TwacCase var _ -> "case " ++ show var
           Abort line str -> "abort " ++ show line ++ ": " ++ str
+          TwacInternal internal -> "internal: " ++ show internal
 
 showTwac twac = unlines (map show twac)
 
@@ -164,6 +166,7 @@ generateTwacStatement pickLowestParents tracStatement = case tracStatement of
       [Assign caseOf outputVariable, TwacCase outputVariable jumpTable]
         ++ concatMap (fmap item) caseElementBodies
         ++ errorCase
+  Trac.TracInternal internal -> pure [TwacInternal internal]
 
 -- I cannot tell if this is the most beautiful or the most ugly code I have
 -- written. I think I am leaning towards the most ugly. This is hyperbole of

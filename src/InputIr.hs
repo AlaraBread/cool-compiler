@@ -39,6 +39,10 @@ implementationMapEntryToMaybe :: ImplementationMapEntry m -> Maybe m
 implementationMapEntryToMaybe (LocalImpl m) = Just m
 implementationMapEntryToMaybe (ParentImpl t s) = Nothing
 
+implementationMapEntryName :: (m -> String) -> ImplementationMapEntry m -> String
+implementationMapEntryName f (LocalImpl m) = f m
+implementationMapEntryName f (ParentImpl t s) = s
+
 -- Child to parent
 type ParentMap = Map.Map Type Type
 
@@ -102,7 +106,12 @@ data ExprWithoutLine
   | Let ![LetBinding] !(Typed Expr)
   | Case !(Typed Expr) ![CaseElement]
   | -- COOL internal expressions
-    IOInInt
+    InputInternal !Internal
+  | Constructor
+  deriving (Show)
+
+data Internal
+  = IOInInt
   | IOInString
   | IOOutInt
   | IOOutString
@@ -112,8 +121,6 @@ data ExprWithoutLine
   | StringConcat
   | StringLength
   | StringSubstr
-  | -- our own internal expressions
-    Constructor
   deriving (Show)
 
 -- Represents a binding in a let binding.

@@ -9,7 +9,7 @@ import Data.Maybe (mapMaybe, maybe)
 import Distribution.Compat.CharParsing (CharParsing (string))
 import InputIr (ImplementationMapEntry)
 import qualified InputIr
-import Trac (Label (..), Temporary (Temporary), TypeDetails (TypeDetails, typeSize), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getLabel, getVariable)
+import Trac (Label (..), Temporary (Temporary), TracStatement (dispatchReceiverType), TypeDetails (TypeDetails, methodTags, typeSize), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getLabel, getVariable)
 import qualified Twac
 import TwacR (TwacRStatement (TwacRStatement), showByte)
 import qualified TwacR
@@ -42,7 +42,7 @@ data AssemblyStatement
   | Negate TwacR.Register
   | AssemblyLabel Label
   | Call Label
-  | DynamicCall TwacR.Register
+  | CallAddress Address
   | Return
   | Jump Label
   | JumpZero Label
@@ -93,7 +93,7 @@ instance Show AssemblyStatement where
           Negate dst -> unary32 "negl" dst
           AssemblyLabel (Label label) -> label ++ ":"
           Call label -> unary "call" label
-          DynamicCall label -> unary "call" label
+          CallAddress addr -> indent $ "call *" ++ show addr
           Return -> indent "ret"
           Jump label -> unary "jmp" label
           JumpZero label -> unary "jz" label
@@ -146,14 +146,26 @@ data AssemblyIr = AssemblyIr
 instance Show AssemblyIr where
   show (AssemblyIr code data') = unlines (map show data') ++ "\n\n.globl main\n" ++ unlines (map show code)
 
-main' = ([AssemblyLabel $ Label "main", Jump $ Label "Main.main"], [])
+main' :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
+main' typeDetailsMap =
+  let type' = InputIr.Type "Main"
+   in combineAssembly
+        <$> mapM
+          (generateAssemblyStatements 1 typeDetailsMap)
+          [ TwacRStatement $ Twac.TwacLabel $ Label "main",
+            TwacRStatement $ Twac.New type' TwacR.Rdi,
+            TwacR.AllocateStackSpace 1,
+            TwacRStatement $ Twac.Dispatch TwacR.R10 TwacR.Rdi type' Nothing "main" [TwacR.Rdi],
+            TwacR.DeallocateStackSpace 1,
+            TwacRStatement $ Twac.Return TwacR.Rax
+          ]
 
 -- TODO: write error handling here
 inInt typeDetailsMap =
   let formatLabel = Label "in_int_format"
       overflowLabel = Label "in_int_overflow"
       noOverflowLabel = Label "in_int_no_overflow"
-      TypeDetails tag size = typeDetailsMap Map.! InputIr.Type "Int"
+      TypeDetails tag size _ = typeDetailsMap Map.! InputIr.Type "Int"
    in ( [AssemblyLabel $ Label "in_int"]
           -- since we calloc, the integer starts at zero
           ++ callocWords size
@@ -281,21 +293,22 @@ outString =
 generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
 generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.typeDetailsMap} =
   uncurry AssemblyIr $
-    combineAssembly
-      [ combineAssembly $ generateVTable typeDetailsMap <$> Map.toList implementationMap,
-        main',
-        inInt typeDetailsMap,
-        outInt,
-        outString,
-        evalState
-          ( do
-              let methodList = fmap (mapMaybe InputIr.implementationMapEntryToMaybe) (Map.elems implementationMap)
-              methods <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
-              let (code, data') = traverse combineAssembly methods
-              pure (code, concat data')
-          )
-          temporaryState
-      ]
+    combineAssembly $
+      evalState
+        ( sequence
+            [ pure $ combineAssembly $ generateVTable typeDetailsMap <$> Map.toList implementationMap,
+              main' typeDetailsMap,
+              pure $ inInt typeDetailsMap,
+              pure outInt,
+              pure outString,
+              do
+                let methodList = fmap (mapMaybe InputIr.implementationMapEntryToMaybe) (Map.elems implementationMap)
+                methods <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
+                let (code, data') = traverse combineAssembly methods
+                pure (code, concat data')
+            ]
+        )
+        temporaryState
 
 generateVTable :: TypeDetailsMap -> (InputIr.Type, [ImplementationMapEntry TwacR.TwacRMethod]) -> ([AssemblyStatement], [AssemblyData])
 generateVTable typeDetailsMap (InputIr.Type selfType, entries) =
@@ -338,27 +351,26 @@ combineAssembly asm =
 --           8(%rbp) | saved return address
 --            (%rbp) | saved %rbp
 --          -8(%rbp) | saved %rbx
---         -16(%rbp) | saved %rsp
---         -24(%rbp) | saved %r12
---         -32(%rbp) | saved %r13
---         -40(%rbp) | saved %r14
---         -48(%rbp) | saved %r15
---         -56(%rbp) | argument 0
+--         -16(%rbp) | saved %r12
+--         -24(%rbp) | saved %r13
+--         -32(%rbp) | saved %r14
+--         -40(%rbp) | saved %r15
+--         -48(%rbp) | argument 0
 --                   | ...
---      -8r-56(%rbp) | argument r
---      -8r-64(%rbp) | temporary 0
+--      -8r-48(%rbp) | argument r
+--      -8r-56(%rbp) | temporary 0
 --                   | ...
---  -8(r+t)-64(%rbp) | temporary t
+--  -8(r+t)-56(%rbp) | temporary t
 
 getAddress :: Int -> Variable -> Address
 getAddress registerParamCount variable = case variable of
   TemporaryV t ->
-    Address (Just $ -8 * (registerParamCount + t) - 64) TwacR.Rbp Nothing Nothing
+    Address (Just $ -8 * (registerParamCount + t) - 56) TwacR.Rbp Nothing Nothing
   AttributeV n ->
     attributeAddress TwacR.R15 n
   ParameterV n ->
     if n < 6
-      then Address (Just $ -8 * n - 56) TwacR.Rbp Nothing Nothing
+      then Address (Just $ -8 * n - 48) TwacR.Rbp Nothing Nothing
       else Address (Just $ 8 * (n - 6) + 16) TwacR.Rbp Nothing Nothing
 
 -- Gives the base address of an object
@@ -374,8 +386,12 @@ typeTagAddress :: TwacR.Register -> Address
 typeTagAddress r = Address (Just 8) r Nothing Nothing
 
 -- Gives the address of the ptr to the vtable of an object
-vtableAddress :: TwacR.Register -> Address
-vtableAddress r = Address (Just 16) r Nothing Nothing
+vTableAddress :: TwacR.Register -> Address
+vTableAddress r = Address (Just 16) r Nothing Nothing
+
+-- Gives the address of a ptr to the nth method in a vtable
+vTableMethodAddress :: TwacR.Register -> Int -> Address
+vTableMethodAddress r n = Address (Just $ n * 8) r Nothing Nothing
 
 -- Gives the address of the nth attribute pointed to by the given register
 attributeAddress :: TwacR.Register -> Int -> Address
@@ -498,18 +514,28 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                   Negate r1,
                   Store r1 (attributeAddress dst 0)
                 ]
-          -- TODO: set vtable pointer
           -- TODO: deal with SELF_TYPE, somehow (look at type tag of self?)
+          -- Note: we are guaranteed to not need the self pointer in
+          -- non-SELF_TYPE construction.
           Twac.New type' dst ->
-            let TypeDetails tag size = typeDetailsMap Map.! type'
+            let TypeDetails tag size _ = typeDetailsMap Map.! type'
+                InputIr.Type typeName = type'
+                vtable = Label $ typeName ++ "..vtable"
              in pure $
                   instOnly $
                     callocWords size
-                      ++ [ Transfer TwacR.Rax dst,
-                           -- accessing negative attributes is a cursed, but
-                           -- correct way of doing this.
-                           StoreConst (size * 8) (sizeAddress dst),
-                           StoreConst tag (typeTagAddress dst)
+                      ++ [ Push TwacR.R15,
+                           Transfer TwacR.Rax TwacR.R15,
+                           StoreConst (size * 8) (sizeAddress TwacR.R15),
+                           StoreConst tag (typeTagAddress TwacR.R15),
+                           LoadLabel vtable r1,
+                           Store r1 (vTableAddress TwacR.R15),
+                           Transfer TwacR.R15 TwacR.Rdi,
+                           SubtractImmediate64 8 TwacR.Rsp,
+                           Call $ Label $ typeName ++ "..new",
+                           AddImmediate64 8 TwacR.Rsp,
+                           Transfer TwacR.R15 dst,
+                           Pop TwacR.R15
                          ]
           Twac.Default type' dst ->
             let delegateToNew = generateAssemblyStatements' $ TwacRStatement $ Twac.New type' dst
@@ -529,12 +555,18 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
             endLabel <- getLabel
             set <- setBool TwacR.Rax JumpNonZero
             pure $ instOnly (new ++ set)
-          -- TODO: make this not *incredibly* janky, lol. This *only* handles in_int and out_int.
+          -- TODO: handle dispatch on void
           Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs ->
-            case dispatchMethod of
-              "in_int" -> pure $ instOnly [Call $ Label "in_int"]
-              "out_int" -> pure $ instOnly [Call $ Label "out_int"]
-              "out_string" -> pure $ instOnly [Call $ Label "out_string"]
+            case dispatchType of
+              -- Static dispatch; this is easy! We like this.
+              Just (InputIr.Type t) -> pure $ instOnly [Call $ Label $ t ++ "." ++ dispatchMethod]
+              Nothing ->
+                let methodTag = (methodTags (typeDetailsMap Map.! dispatchReceiverType) Map.! dispatchMethod)
+                 in pure $
+                      instOnly
+                        [ Load (vTableAddress dispatchReceiver) r1,
+                          CallAddress (vTableMethodAddress r1 methodTag)
+                        ]
           Twac.Jump label ->
             pure $ instOnly [Jump label]
           Twac.TwacLabel label ->
@@ -572,6 +604,21 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                 ]
           Twac.TwacCase condition jmpTable -> undefined
           Twac.Abort line string -> undefined
+          -- TODO: replace commments with calls as we right the code
+          Twac.TwacInternal internal ->
+            let call function = pure $ instOnly [SubtractImmediate64 8 TwacR.Rsp, Call $ Label function, AddImmediate64 8 TwacR.Rsp, Return]
+                comment function = pure $ instOnly [SubtractImmediate64 8 TwacR.Rsp, Comment function, AddImmediate64 8 TwacR.Rsp, Return]
+             in case internal of
+                  InputIr.IOInInt -> call "in_int"
+                  InputIr.IOInString -> comment "in_string"
+                  InputIr.IOOutInt -> call "out_int"
+                  InputIr.IOOutString -> call "out_string"
+                  InputIr.ObjectAbort -> comment "abort"
+                  InputIr.ObjectCopy -> comment "copy"
+                  InputIr.ObjectTypeName -> comment "type_name"
+                  InputIr.StringConcat -> comment "concat"
+                  InputIr.StringLength -> comment "length"
+                  InputIr.StringSubstr -> comment "substr"
 
 -- Inspired by the reference compiler output, though there really is just about
 -- one way to do this. Using calloc instead of malloc means we can save the

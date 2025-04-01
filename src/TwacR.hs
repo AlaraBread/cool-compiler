@@ -235,6 +235,7 @@ generateTwacRStatements epilogue freeRegisters twac =
                 TwacRStatement $ TwacCase vR jmpTable
               ]
         Abort line message -> [TwacRStatement $ Abort line message]
+        TwacInternal internal -> [TwacRStatement $ TwacInternal internal]
 
 generateTwacR :: TwacR -> TwacI -> TwacR
 generateTwacR epilogue = concatMap (unsequence . fmap (generateTwacRStatements epilogue freeRegisters))
@@ -262,9 +263,14 @@ generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount
       epilogue =
         Lined 0 (DeallocateStackSpace (temporarySpace + length paramRegisters'))
           : map (Lined 0 . Pop) (reverse calleeSavedRegisters)
+      -- do not touch internal exceptions, except to give them a label
+      twacR = generateTwacR epilogue body
+      body' = case twacR of
+        [Lined _ (TwacRStatement (TwacInternal _))] -> Lined 0 (TwacRStatement $ TwacLabel $ Label $ typeName ++ "." ++ name) : twacR
+        t -> prologue ++ twacR
    in TwacRMethod
         name
-        (prologue ++ generateTwacR epilogue body)
+        body'
         registerParamCount
         memoryParamCount
 

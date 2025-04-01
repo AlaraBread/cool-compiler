@@ -164,16 +164,16 @@ parseExprWithoutLine = do
     "internal" -> do
       kind <- parseLine
       pure $ case kind of
-        "IO.in_int" -> IOInInt
-        "IO.in_string" -> IOInString
-        "IO.out_int" -> IOOutInt
-        "IO.out_string" -> IOOutString
-        "Object.abort" -> ObjectAbort
-        "Object.copy" -> ObjectCopy
-        "Object.type_name" -> ObjectTypeName
-        "String.concat" -> StringConcat
-        "String.length" -> StringLength
-        "String.substr" -> StringSubstr
+        "IO.in_int" -> InputInternal IOInInt
+        "IO.in_string" -> InputInternal IOInString
+        "IO.out_int" -> InputInternal IOOutInt
+        "IO.out_string" -> InputInternal IOOutString
+        "Object.abort" -> InputInternal ObjectAbort
+        "Object.copy" -> InputInternal ObjectCopy
+        "Object.type_name" -> InputInternal ObjectTypeName
+        "String.concat" -> InputInternal StringConcat
+        "String.length" -> InputInternal StringLength
+        "String.substr" -> InputInternal StringSubstr
 
   pure $ Typed type' expr
 

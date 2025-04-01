@@ -31,7 +31,7 @@ parseClassMap =
 parseClassMapEntry :: Parser (Type, [Attribute])
 parseClassMapEntry = do
   type' <- parseType
-  let parseHasInitializer = ("attribute_init" ==) <$> parseLine
+  let parseHasInitializer = ("initializer" ==) <$> parseLine
   attrs <- parseList (parseHasInitializer >>= parseAttribute)
   pure (type', attrs)
 
@@ -89,8 +89,8 @@ parseFeature = do
 parseAttribute :: Bool -> Parser Attribute
 parseAttribute initialized =
   if initialized
-    then Attribute <$> parseIdentifier <*> parseType <*> (Just <$> parseExpr)
-    else Attribute <$> parseIdentifier <*> parseType <*> pure Nothing
+    then Attribute <$> (Identifier 0 <$> parseLine) <*> parseType <*> (Just <$> parseExpr)
+    else Attribute <$> (Identifier 0 <$> parseLine) <*> parseType <*> pure Nothing
 
 parseMethod :: Parser Method
 parseMethod = Method <$> parseIdentifier <*> parseList (parseFormal True) <*> parseExpr

@@ -318,11 +318,8 @@ generateAssemblyMethod typeDetailsMap method = do
     traverse
       (generateAssemblyStatements (TwacR.registerParamCount method) typeDetailsMap . item)
       (TwacR.body method)
-  -- TODO: this is a hack for PA3c3.
-  pure $
-    if TwacR.methodName method == "main"
-      then combineAssembly lines
-      else ([], [])
+
+  pure $ combineAssembly lines
 
 combineAssembly :: [([AssemblyStatement], [AssemblyData])] -> ([AssemblyStatement], [AssemblyData])
 combineAssembly asm =

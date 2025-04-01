@@ -162,7 +162,7 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
               main' typeDetailsMap,
               pure $ inInt typeDetailsMap,
               pure outInt,
-              pure outString,
+              outString,
               inString typeDetailsMap,
               pushString,
               do
@@ -589,94 +589,94 @@ outInt =
         [StringConstant formatLabel "%d"]
       )
 
-outString =
-  let loop = Label "out_string_loop"
-      nonBackslash = Label "out_string_non_backslash"
-      notEscapeSequence = Label "out_string_not_escape"
-      notPrevBackslash = Label "out_string_not_prev_backslash"
-      nonNewline = Label "out_string_newline"
-      afterCall = Label "out_string_after_call"
-      end = Label "out_string_end"
-   in ( [ AssemblyLabel $ Label "out_string",
-          Load (attributeAddress TwacR.Rsi 0) TwacR.R8,
-          Load (attributeAddress TwacR.Rsi 1) TwacR.Rcx,
-          LoadConst 0 TwacR.Rsi, -- keep track of backslashes
-          LoadConst 0 TwacR.Rdx, -- loop counter
-          AssemblyLabel loop,
-          LoadConst 0 TwacR.Rdi,
-          LoadByte (Address Nothing TwacR.R8 (Just TwacR.Rdx) (Just 1)) TwacR.Rdi,
-          CmpConst 0 TwacR.Rsi,
-          JumpZero notPrevBackslash,
-          -- previous character was a backslash
-          LoadConst 0 TwacR.Rsi, -- reset flag
-          CmpConst (toInteger $ ord 'n') TwacR.Rdi,
-          JumpNonZero nonNewline,
-          -- prev was a backslash and current is a 'n'
-          LoadConst (ord '\n') TwacR.Rdi,
-          Jump nonBackslash,
-          AssemblyLabel nonNewline,
-          -- prev character was a backslash but cur isnt 'n'
-          CmpConst (toInteger $ ord 't') TwacR.Rdi,
-          JumpNonZero notEscapeSequence,
-          -- prev character was backslash and cur is 't'
-          LoadConst (ord '\t') TwacR.Rdi,
-          Jump nonBackslash,
-          AssemblyLabel notEscapeSequence,
-          -- prev was backslash, current char isnt an escape sequence
-          -- need to output an extra backslash
-          Push TwacR.Rcx,
-          Push TwacR.Rdi,
-          Push TwacR.Rsi,
-          Push TwacR.Rdx,
-          Push TwacR.R8,
-          LoadConst (ord '\\') TwacR.Rdi,
-          Call $ Label "putchar",
-          Pop TwacR.R8,
-          Pop TwacR.Rdx,
-          Pop TwacR.Rsi,
-          Pop TwacR.Rdi,
-          Pop TwacR.Rcx,
-          AssemblyLabel notPrevBackslash,
-          CmpConst (toInteger $ ord '\\') TwacR.Rdi,
-          JumpNonZero nonBackslash,
-          -- cur character is backslash
-          LoadConst 1 TwacR.Rsi,
-          Jump afterCall,
-          AssemblyLabel nonBackslash,
-          Push TwacR.Rcx,
-          Push TwacR.Rdi,
-          Push TwacR.Rsi,
-          Push TwacR.Rdx,
-          Push TwacR.R8,
-          Call $ Label "putchar",
-          Pop TwacR.R8,
-          Pop TwacR.Rdx,
-          Pop TwacR.Rsi,
-          Pop TwacR.Rdi,
-          Pop TwacR.Rcx,
-          AssemblyLabel afterCall,
-          AddImmediate 1 TwacR.Rdx,
-          Cmp TwacR.Rcx TwacR.Rdx,
-          JumpLessThan loop,
-          CmpConst 0 TwacR.Rsi,
-          JumpZero end,
-          -- ended the loop with a backslash buffered, need to output it
-          Push TwacR.R8, -- just need to push something for parity here
-          LoadConst (ord '\\') TwacR.Rdi,
-          Call $ Label "putchar",
-          Pop TwacR.R8,
-          AssemblyLabel end,
-          Return
-        ],
-        []
-      )
+outString = do
+  loop <- getLabel
+  nonBackslash <- getLabel
+  notEscapeSequence <- getLabel
+  notPrevBackslash <- getLabel
+  nonNewline <- getLabel
+  afterCall <- getLabel
+  end <- getLabel
+  pure
+    ( [ AssemblyLabel $ Label "out_string",
+        Load (attributeAddress TwacR.Rsi 0) TwacR.R8,
+        Load (attributeAddress TwacR.Rsi 1) TwacR.Rcx,
+        LoadConst 0 TwacR.Rsi, -- keep track of backslashes
+        LoadConst 0 TwacR.Rdx, -- loop counter
+        AssemblyLabel loop,
+        LoadConst 0 TwacR.Rdi,
+        LoadByte (Address Nothing TwacR.R8 (Just TwacR.Rdx) (Just 1)) TwacR.Rdi,
+        CmpConst 0 TwacR.Rsi,
+        JumpZero notPrevBackslash,
+        -- previous character was a backslash
+        LoadConst 0 TwacR.Rsi, -- reset flag
+        CmpConst (toInteger $ ord 'n') TwacR.Rdi,
+        JumpNonZero nonNewline,
+        -- prev was a backslash and current is a 'n'
+        LoadConst (ord '\n') TwacR.Rdi,
+        Jump nonBackslash,
+        AssemblyLabel nonNewline,
+        -- prev character was a backslash but cur isnt 'n'
+        CmpConst (toInteger $ ord 't') TwacR.Rdi,
+        JumpNonZero notEscapeSequence,
+        -- prev character was backslash and cur is 't'
+        LoadConst (ord '\t') TwacR.Rdi,
+        Jump nonBackslash,
+        AssemblyLabel notEscapeSequence,
+        -- prev was backslash, current char isnt an escape sequence
+        -- need to output an extra backslash
+        Push TwacR.Rcx,
+        Push TwacR.Rdi,
+        Push TwacR.Rsi,
+        Push TwacR.Rdx,
+        Push TwacR.R8,
+        LoadConst (ord '\\') TwacR.Rdi,
+        Call $ Label "putchar",
+        Pop TwacR.R8,
+        Pop TwacR.Rdx,
+        Pop TwacR.Rsi,
+        Pop TwacR.Rdi,
+        Pop TwacR.Rcx,
+        AssemblyLabel notPrevBackslash,
+        CmpConst (toInteger $ ord '\\') TwacR.Rdi,
+        JumpNonZero nonBackslash,
+        -- cur character is backslash
+        LoadConst 1 TwacR.Rsi,
+        Jump afterCall,
+        AssemblyLabel nonBackslash,
+        Push TwacR.Rcx,
+        Push TwacR.Rdi,
+        Push TwacR.Rsi,
+        Push TwacR.Rdx,
+        Push TwacR.R8,
+        Call $ Label "putchar",
+        Pop TwacR.R8,
+        Pop TwacR.Rdx,
+        Pop TwacR.Rsi,
+        Pop TwacR.Rdi,
+        Pop TwacR.Rcx,
+        AssemblyLabel afterCall,
+        AddImmediate 1 TwacR.Rdx,
+        Cmp TwacR.Rcx TwacR.Rdx,
+        JumpLessThan loop,
+        CmpConst 0 TwacR.Rsi,
+        JumpZero end,
+        -- ended the loop with a backslash buffered, need to output it
+        Push TwacR.R8, -- just need to push something for parity here
+        LoadConst (ord '\\') TwacR.Rdi,
+        Call $ Label "putchar",
+        Pop TwacR.R8,
+        AssemblyLabel end,
+        Return
+      ],
+      []
+    )
 
 inString typeDetailsMap =
   do
-    let formatLabel = Label "in_string_format"
-        loop = Label "in_string_loop"
-        endLoop = Label "in_string_end_loop"
-        registerParamCount = 2
+    loop <- getLabel
+    endLoop <- getLabel
+    let registerParamCount = 2
         generateAssemblyStatements' = generateAssemblyStatements registerParamCount typeDetailsMap
     (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.Rax
     pure
@@ -713,14 +713,10 @@ inString typeDetailsMap =
 
 pushString :: State Temporary ([AssemblyStatement], [AssemblyData])
 pushString = do
-  -- dontExpand <- getLabel
-  -- copyLoop <- getLabel
-  -- endCopyLoop <- getLabel
-  -- nonNull <- getLabel
-  let dontExpand = Label "push_string_dont_expand"
-  let copyLoop = Label "push_string_copy_loop"
-  let endCopyLoop = Label "push_string_end_copy_loop"
-  let nonNull = Label "push_string_not_null"
+  dontExpand <- getLabel
+  copyLoop <- getLabel
+  endCopyLoop <- getLabel
+  nonNull <- getLabel
   pure
     ( [ AssemblyLabel $ Label "push_string",
         SubtractImmediate64 8 TwacR.Rsp,

@@ -344,7 +344,7 @@ getAddress registerParamCount variable = case variable of
   TemporaryV t ->
     Address (Just $ -8 * (registerParamCount + t) - 64) TwacR.Rbp Nothing Nothing
   AttributeV n ->
-    Address (Just $ (3 + n) * 8) TwacR.R15 Nothing Nothing
+    attributeAddress TwacR.R15 n
   ParameterV n ->
     if n < 6
       then Address (Just $ -8 * n - 56) TwacR.Rbp Nothing Nothing

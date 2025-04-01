@@ -37,19 +37,19 @@ main = do
 
   when debug $ putStrLn "Main.main Trac: "
   let (tracIr, temporaryState) = generateTrac inputIr
-  let (TracIr tracImpMap _ _) = tracIr
+  let (TracIr tracImpMap _) = tracIr
   let TracMethod _ body _ _ = findMain Trac.methodName tracImpMap
   when debug $ putStrLn $ showTrac body
 
   when debug $ putStrLn "Main.main Twac: "
   let (twacIr, temporaryState') = generateTwac pickLowestParents' tracIr temporaryState
-  let TwacIr twacImpMap _ _ = twacIr
+  let TwacIr twacImpMap _ = twacIr
   let TwacMethod _ body _ _ = findMain Twac.methodName twacImpMap
   when debug $ putStrLn $ showTwac body
 
   when debug $ putStrLn "Main.main TwacR: "
   let twacRIr = generateTwacRIr twacIr
-  let TwacRIr twacRImpMap _ _ = twacRIr
+  let TwacRIr twacRImpMap _ = twacRIr
   let mainClassMethods = twacRImpMap Map.! Type "Main"
   let TwacRMethod _ body _ _ = findMain TwacR.methodName twacRImpMap
   when debug $ putStrLn $ showTwac body

@@ -13,7 +13,6 @@ import Util
 
 data TracIr = TracIr
   { implementationMap :: Map.Map InputIr.Type [InputIr.ImplementationMapEntry TracMethod],
-    constructorMap :: Map.Map InputIr.Type Trac,
     typeDetailsMap :: TypeDetailsMap
   }
   deriving (Show)
@@ -126,11 +125,13 @@ getLabel :: State Temporary Label
 getLabel = state $ \(Temporary l t) -> (Label $ "l" ++ show (l + 1), Temporary (l + 1) t)
 
 generateTracExpr ::
+  InputIr.ClassMap ->
   Map.Map String Variable ->
   InputIr.Type ->
   InputIr.Typed InputIr.Expr ->
   State Temporary (Trac, Variable)
 generateTracExpr
+  classMap
   bindingMap
   selfType
   InputIr.Typed
@@ -152,7 +153,7 @@ generateTracExpr
         linedUnary = compose2 lined'
         linedBinary = compose3 lined'
 
-        generateTracExpr' = generateTracExpr bindingMap selfType
+        generateTracExpr' = generateTracExpr classMap bindingMap selfType
      in case expr of
           InputIr.Assign
             InputIr.Identifier
@@ -326,7 +327,7 @@ generateTracExpr
 
             initializer <- case rhs of
               Just rhs' -> do
-                (rhsTrac, rhsV) <- generateTracExpr bindingMap selfType rhs'
+                (rhsTrac, rhsV) <- generateTracExpr classMap bindingMap selfType rhs'
                 pure $
                   rhsTrac
                     ++ [ Lined (InputIr.line bindingName) $ Comment $ InputIr.lexeme bindingName ++ " <- rhs",
@@ -334,7 +335,7 @@ generateTracExpr
                        ]
               Nothing -> pure []
 
-            (restTrac, restV) <- generateTracExpr bindingMap' selfType $ InputIr.Typed type' $ lined' $ InputIr.Let rest body
+            (restTrac, restV) <- generateTracExpr classMap bindingMap' selfType $ InputIr.Typed type' $ lined' $ InputIr.Let rest body
 
             pure (defaultInitializer ++ initializer ++ restTrac, restV)
           InputIr.Case e elements -> do
@@ -347,7 +348,7 @@ generateTracExpr
                        InputIr.caseElementBody
                      } -> do
                       let bindingMap' = Map.insert caseElementVariable eV bindingMap
-                      body <- generateTracExpr bindingMap' selfType caseElementBody
+                      body <- generateTracExpr classMap bindingMap' selfType caseElementBody
                       pure $
                         CaseElement
                           (InputIr.Type caseElementType)
@@ -365,7 +366,10 @@ generateTracExpr
           InputIr.StringConcat -> ([lined' $ Comment "String.concat"],) <$> getVariable
           InputIr.StringLength -> ([lined' $ Comment "String.length"],) <$> getVariable
           InputIr.StringSubstr -> ([lined' $ Comment "String.substr"],) <$> getVariable
-          InputIr.Constructor -> ([lined' $ Comment "*..new"],) <$> getVariable
+          InputIr.Constructor -> do
+            constructor <- generateTracConstructor classMap selfType
+            eV <- getVariable
+            pure (constructor, eV)
 
 binaryOperation ::
   ( InputIr.Typed InputIr.Expr ->
@@ -410,8 +414,8 @@ generateAttributeMap attributes =
       (map (InputIr.lexeme . InputIr.attrName) attributes)
       (map AttributeV [0 ..])
 
-generateTracMethod :: [InputIr.Attribute] -> InputIr.Type -> InputIr.Method -> State Temporary TracMethod
-generateTracMethod attributes type' (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
+generateTracMethod :: InputIr.ClassMap -> [InputIr.Attribute] -> InputIr.Type -> InputIr.Method -> State Temporary TracMethod
+generateTracMethod classMap attributes type' (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
   let temporaryMap = Map.empty
 
   let paramNames = "self" : map (InputIr.lexeme . InputIr.formalName) methodFormals
@@ -421,7 +425,7 @@ generateTracMethod attributes type' (InputIr.Method {InputIr.methodName, InputIr
 
   let bindingMap = Map.union paramMap attributeMap
 
-  (trac, v) <- generateTracExpr bindingMap type' methodBody
+  (trac, v) <- generateTracExpr classMap bindingMap type' methodBody
   temporaryCount' <- gets (\(Temporary l t) -> t)
   let InputIr.Type typeName = type'
   pure
@@ -432,8 +436,9 @@ generateTracMethod attributes type' (InputIr.Method {InputIr.methodName, InputIr
         temporaryCount = temporaryCount'
       }
 
-generateTracConstructor :: InputIr.Type -> [InputIr.Attribute] -> State Temporary Trac
-generateTracConstructor selfType attrs = do
+generateTracConstructor :: InputIr.ClassMap -> InputIr.Type -> State Temporary Trac
+generateTracConstructor classMap selfType = do
+  let attrs = classMap Map.! selfType
   let attributeMap = generateAttributeMap attrs
   let bindingMap = Map.insert "self" (ParameterV 0) attributeMap
   attrs' <-
@@ -446,7 +451,7 @@ generateTracConstructor selfType attrs = do
            idx
            ) -> case attrRhs of
             Just e -> do
-              (trac, v) <- generateTracExpr attributeMap selfType e
+              (trac, v) <- generateTracExpr classMap attributeMap selfType e
               pure $ trac ++ [Lined line $ Assign (AttributeV idx) v]
             Nothing -> pure [Lined line $ Default (AttributeV idx) attrType]
       )
@@ -461,15 +466,13 @@ generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
           sequence $
             Map.mapWithKey
               ( mapM
-                  . ( \name method -> traverse (generateTracMethod (classMap Map.! name) name) method
+                  . ( \name method -> traverse (generateTracMethod classMap (classMap Map.! name) name) method
                     )
               )
               implMap
-        constructorMap <- Map.traverseWithKey generateTracConstructor classMap
         pure
           TracIr
             { implementationMap = implMap',
-              constructorMap = constructorMap,
               typeDetailsMap =
                 snd $
                   Map.mapAccumWithKey

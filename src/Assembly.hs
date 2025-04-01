@@ -146,8 +146,6 @@ data AssemblyIr = AssemblyIr
 instance Show AssemblyIr where
   show (AssemblyIr code data') = unlines (map show data') ++ "\n\n.globl main\n" ++ unlines (map show code)
 
--- TODO: actually generate constructors...
-
 main' = ([AssemblyLabel $ Label "main", Jump $ Label "Main.main"], [])
 
 -- TODO: write error handling here
@@ -281,7 +279,7 @@ outString =
       )
 
 generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
-generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.constructorMap, TwacR.typeDetailsMap} =
+generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.typeDetailsMap} =
   uncurry AssemblyIr $
     combineAssembly
       [ combineAssembly $ generateVTable typeDetailsMap <$> Map.toList implementationMap,

@@ -12,7 +12,6 @@ import Util
 
 data TwacRIr = TwacRIr
   { implementationMap :: Map.Map Type [ImplementationMapEntry TwacRMethod],
-    constructorMap :: Map.Map Type TwacR,
     typeDetailsMap :: TypeDetailsMap
   }
 
@@ -270,8 +269,7 @@ generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount
         memoryParamCount
 
 generateTwacRIr :: TwacIIr -> TwacRIr
-generateTwacRIr (TwacIr impMap constructorMap typeDetailsMap) =
+generateTwacRIr (TwacIr impMap typeDetailsMap) =
   TwacRIr
-    (Map.mapWithKey (\type' -> fmap (fmap (generateTwacRMethod type'))) impMap)
-    (fmap (generateTwacR []) constructorMap)
+    (Map.mapWithKey (fmap . fmap . generateTwacRMethod) impMap)
     typeDetailsMap

@@ -526,7 +526,6 @@ sanitizeString :: String -> String
 sanitizeString = concatMap (\c -> if c == '\\' then "\\\\" else [c])
 
 -- haskell doesn't like circular dependencies 😭
-
 main' :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 main' typeDetailsMap =
   let type' = InputIr.Type "Main"
@@ -534,10 +533,23 @@ main' typeDetailsMap =
         <$> mapM
           (generateAssemblyStatements 1 typeDetailsMap)
           [ TwacRStatement $ Twac.TwacLabel $ Label "main",
-            TwacRStatement $ Twac.New type' TwacR.Rdi,
+            TwacR.Push TwacR.Rbx,
+            TwacR.Push TwacR.Rbp,
+            TwacR.Push TwacR.R12,
+            TwacR.Push TwacR.R13,
+            TwacR.Push TwacR.R14,
+            TwacR.Push TwacR.R15,
             TwacR.AllocateStackSpace 1,
+            TwacRStatement $ Twac.New type' TwacR.Rdi,
             TwacRStatement $ Twac.Dispatch TwacR.R10 TwacR.Rdi type' Nothing "main" [TwacR.Rdi],
             TwacR.DeallocateStackSpace 1,
+            TwacR.Pop TwacR.R15,
+            TwacR.Pop TwacR.R14,
+            TwacR.Pop TwacR.R13,
+            TwacR.Pop TwacR.R12,
+            TwacR.Pop TwacR.Rbp,
+            TwacR.Pop TwacR.Rbx,
+            TwacRStatement $ Twac.IntConstant 0 TwacR.Rax,
             TwacRStatement $ Twac.Return TwacR.Rax
           ]
 

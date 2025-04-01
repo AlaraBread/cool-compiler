@@ -1,6 +1,8 @@
 class Main inherits IO {
   f(n: Int, p0: String, p1: String, p2: String, p3: String, p4: String, p5: String, p6: String, p7: String, p8: String, p9: String, p10: String, p11: String, p12: String, p13: String, p14: String, p15: String): Object {
   if n < 0 then 0 else {
+    out_int(n);
+    out_string(": ");
     out_string(p0);
     out_string(p1);
     out_string(p2);

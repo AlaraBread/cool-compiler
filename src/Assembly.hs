@@ -38,6 +38,7 @@ data AssemblyStatement
   | LoadByte Address TwacR.Register
   | LoadConst Int TwacR.Register
   | Transfer TwacR.Register TwacR.Register
+  | TransferConst Int TwacR.Register
   | Push TwacR.Register
   | Pop TwacR.Register
   | Not TwacR.Register
@@ -91,6 +92,7 @@ instance Show AssemblyStatement where
           LoadByte src dst -> indent $ "mov " ++ show src ++ ", " ++ showByte dst
           LoadConst src dst -> binaryConst "movq" src dst
           Transfer src dst -> binary "movq" src dst
+          TransferConst src dst -> binaryConst "movq" src dst
           Push src -> unary "pushq" src
           Pop dst -> unary "popq" dst
           Not dst -> unary "notq" dst
@@ -161,6 +163,8 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
               pure $ inInt typeDetailsMap,
               pure outInt,
               pure outString,
+              inString typeDetailsMap,
+              pushString,
               do
                 let methodList = fmap (mapMaybe InputIr.implementationMapEntryToMaybe) (Map.elems implementationMap)
                 methods <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
@@ -478,7 +482,7 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
                 comment function = pure $ instOnly [SubtractImmediate64 8 TwacR.Rsp, Comment function, AddImmediate64 8 TwacR.Rsp, Return]
              in case internal of
                   InputIr.IOInInt -> call "in_int"
-                  InputIr.IOInString -> comment "in_string"
+                  InputIr.IOInString -> call "in_string"
                   InputIr.IOOutInt -> call "out_int"
                   InputIr.IOOutString -> call "out_string"
                   InputIr.ObjectAbort -> comment "abort"
@@ -667,11 +671,12 @@ outString =
         []
       )
 
-inString registerParamCount typeDetailsMap =
+inString typeDetailsMap =
   do
     let formatLabel = Label "in_string_format"
         loop = Label "in_string_loop"
         endLoop = Label "in_string_end_loop"
+        registerParamCount = 2
         generateAssemblyStatements' = generateAssemblyStatements registerParamCount typeDetailsMap
     (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.Rax
     pure
@@ -688,7 +693,7 @@ inString registerParamCount typeDetailsMap =
                Pop TwacR.Rdi,
                CmpConst (toInteger $ ord '\n') TwacR.Rsi,
                JumpZero endLoop,
-               CmpConst (-1) TwacR.Rsi,
+               CmpConst (-1) TwacR.Rsi, -- eof
                JumpZero endLoop,
                Transfer TwacR.Rax TwacR.Rdi,
                Push TwacR.Rdi,
@@ -708,26 +713,32 @@ inString registerParamCount typeDetailsMap =
 
 pushString :: State Temporary ([AssemblyStatement], [AssemblyData])
 pushString = do
-  dontExpand <- getLabel
-  copyLoop <- getLabel
-  endCopyLoop <- getLabel
-  nonNull <- getLabel
+  -- dontExpand <- getLabel
+  -- copyLoop <- getLabel
+  -- endCopyLoop <- getLabel
+  -- nonNull <- getLabel
+  let dontExpand = Label "push_string_dont_expand"
+  let copyLoop = Label "push_string_copy_loop"
+  let endCopyLoop = Label "push_string_end_copy_loop"
+  let nonNull = Label "push_string_not_null"
   pure
     ( [ AssemblyLabel $ Label "push_string",
         SubtractImmediate64 8 TwacR.Rsp,
         Load (attributeAddress TwacR.Rdi 0) TwacR.R9, -- string pointer
         CmpConst 0 TwacR.R9,
-        JumpZero nonNull,
+        JumpNonZero nonNull,
         -- string pointer is null, lets make an allocation for it
         Push TwacR.Rdi,
         Push TwacR.Rsi,
         LoadConst 1 TwacR.Rdi,
-        LoadConst 32 TwacR.Rsi,
+        LoadConst 8 TwacR.Rsi,
         Call $ Label "calloc",
-        Store TwacR.Rax (attributeAddress TwacR.Rdi 0),
         Pop TwacR.Rsi,
         Pop TwacR.Rdi,
-        StoreConst 32 (attributeAddress TwacR.Rdi 2), -- store capacity
+        Store TwacR.Rax (attributeAddress TwacR.Rdi 0),
+        StoreConst 8 (attributeAddress TwacR.Rdi 2), -- store capacity
+        TransferConst 0 TwacR.Rcx,
+        Jump dontExpand,
         AssemblyLabel nonNull,
         Load (attributeAddress TwacR.Rdi 2) TwacR.Rdx, -- capacity
         Load (attributeAddress TwacR.Rdi 1) TwacR.Rcx, -- length
@@ -760,8 +771,9 @@ pushString = do
         StoreByte TwacR.R9 $ Address (Just 0) TwacR.Rax (Just TwacR.R8) (Just 1),
         AddImmediate 1 TwacR.R8,
         Jump copyLoop,
-        AssemblyLabel endCopyLoop,
         AssemblyLabel dontExpand,
+        Load (attributeAddress TwacR.Rdi 0) TwacR.Rax,
+        AssemblyLabel endCopyLoop,
         -- there is definetly space in the string for another character now
         StoreByte TwacR.Rsi $ Address (Just 0) TwacR.Rax (Just TwacR.Rcx) (Just 1),
         AddImmediate 1 TwacR.Rcx,

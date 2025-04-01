@@ -12,7 +12,7 @@ import qualified InputIr
 import Util
 
 data TracIr = TracIr
-  { implementationMap :: Map.Map InputIr.Type [TracMethod],
+  { implementationMap :: Map.Map InputIr.Type [InputIr.ImplementationMapEntry TracMethod],
     constructorMap :: Map.Map InputIr.Type Trac,
     typeDetailsMap :: TypeDetailsMap
   }
@@ -457,13 +457,13 @@ generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
   runState
     ( do
         implMap' <-
-          sequence
-            $ Map.mapWithKey
+          sequence $
+            Map.mapWithKey
               ( mapM
-                  . ( \name method -> generateTracMethod (classMap Map.! name) name method
+                  . ( \name method -> traverse (generateTracMethod (classMap Map.! name) name) method
                     )
               )
-            $ Map.map (map snd) implMap
+              implMap
         constructorMap <- Map.traverseWithKey generateTracConstructor classMap
         pure
           TracIr

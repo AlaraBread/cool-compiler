@@ -5,7 +5,7 @@ module Assembly where
 import Control.Monad.State
 import Data.Char (ord)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (maybe)
+import Data.Maybe (mapMaybe, maybe)
 import Distribution.Compat.CharParsing (CharParsing (string))
 import qualified InputIr
 import Trac (Label (..), Temporary (Temporary), TypeDetails (TypeDetails, typeSize), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getLabel, getVariable)
@@ -288,9 +288,9 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.co
         outString,
         evalState
           ( do
-              let methodList = map snd $ Map.toList implementationMap
-              x <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
-              let (code, data') = traverse combineAssembly x
+              let methodList = fmap (mapMaybe InputIr.implementationMapEntryToMaybe) (Map.elems implementationMap)
+              methods <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
+              let (code, data') = traverse combineAssembly methods
               pure (code, concat data')
           )
           temporaryState

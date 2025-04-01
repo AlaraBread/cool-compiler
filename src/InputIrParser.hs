@@ -47,12 +47,12 @@ parseParentMapEntry = do
 
 parseImplementationMap :: Parser ImplementationMap
 parseImplementationMap =
-  parseLine >> Map.fromList <$> parseList parseImplementationMapEntry
+  parseLine >> Map.fromList <$> parseList parseImplementationMapEntries
 
-parseImplementationMapEntry :: Parser (Type, [(Type, Method)])
-parseImplementationMapEntry = do
+parseImplementationMapEntries :: Parser (Type, [ImplementationMapEntry Method])
+parseImplementationMapEntries = do
   class' <- parseType
-  methods <- parseList parseImplementationMapMethod
+  methods <- parseList (parseImplementationMapMethod class')
   pure (class', methods)
 
 parseAst :: Parser Ast
@@ -87,8 +87,8 @@ parseAttribute initialized =
 parseMethod :: Parser Method
 parseMethod = Method <$> parseIdentifier <*> parseList (parseFormal True) <*> parseExpr
 
-parseImplementationMapMethod :: Parser (Type, Method)
-parseImplementationMapMethod = do
+parseImplementationMapMethod :: Type -> Parser (ImplementationMapEntry Method)
+parseImplementationMapMethod enclosingType = do
   -- I spent like 5 hours debugging this being a parseIdentifier. I need a hug.
   -- Or a better programming language. Or a lack of a skill issue.
   name <- Identifier 0 <$> parseLine
@@ -97,7 +97,10 @@ parseImplementationMapMethod = do
 
   m <- Method name formals <$> parseExpr
 
-  pure (implementer, m)
+  pure $
+    if enclosingType == implementer
+      then LocalImpl m
+      else ParentImpl implementer $ lexeme name
 
 parseFormal :: Bool -> Parser Formal
 parseFormal typed = do

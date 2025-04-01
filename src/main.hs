@@ -4,6 +4,7 @@ module Main where
 
 import Assembly
 import Data.Map.Strict as Map
+import Data.Maybe (mapMaybe)
 import InputIr
 import InputIrParser
 import System.Directory.Internal.Prelude (getArgs, when)
@@ -14,6 +15,12 @@ import TwacR
 -- Takes an input file name and gives us an output file name.
 outputFile :: String -> String
 outputFile input = reverse $ "s" ++ Prelude.drop 7 (reverse input)
+
+findMain :: (m -> String) -> Map Type [ImplementationMapEntry m] -> m
+findMain name implMap =
+  head $
+    Prelude.filter (\m -> name m == "main") $
+      Data.Maybe.mapMaybe implementationMapEntryToMaybe (implMap Map.! Type "Main")
 
 main :: IO ()
 main = do
@@ -31,25 +38,20 @@ main = do
   when debug $ putStrLn "Main.main Trac: "
   let (tracIr, temporaryState) = generateTrac inputIr
   let (TracIr tracImpMap _ _) = tracIr
-  let mainClassMethods = tracImpMap Map.! Type "Main"
-  let TracMethod _ body _ _ =
-        head $ Prelude.filter (\m -> Trac.methodName m == "main") mainClassMethods
+  let TracMethod _ body _ _ = findMain Trac.methodName tracImpMap
   when debug $ putStrLn $ showTrac body
 
   when debug $ putStrLn "Main.main Twac: "
   let (twacIr, temporaryState') = generateTwac pickLowestParents' tracIr temporaryState
   let TwacIr twacImpMap _ _ = twacIr
-  let mainClassMethods = twacImpMap Map.! Type "Main"
-  let TwacMethod _ body _ _ =
-        head $ Prelude.filter (\m -> Twac.methodName m == "main") mainClassMethods
+  let TwacMethod _ body _ _ = findMain Twac.methodName twacImpMap
   when debug $ putStrLn $ showTwac body
 
   when debug $ putStrLn "Main.main TwacR: "
   let twacRIr = generateTwacRIr twacIr
   let TwacRIr twacRImpMap _ _ = twacRIr
   let mainClassMethods = twacRImpMap Map.! Type "Main"
-  let TwacRMethod _ body _ _ =
-        head $ Prelude.filter (\m -> TwacR.methodName m == "main") mainClassMethods
+  let TwacRMethod _ body _ _ = findMain TwacR.methodName twacRImpMap
   when debug $ putStrLn $ showTwac body
 
   when debug $ putStrLn "asm: "

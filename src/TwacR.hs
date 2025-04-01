@@ -5,13 +5,13 @@ module TwacR where
 import Control.Exception (assert)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import InputIr (Formal, Type (Type))
+import InputIr (Formal, ImplementationMapEntry, Type (Type))
 import Trac (Label (Label), TypeDetailsMap, Variable (ParameterV))
 import Twac
 import Util
 
 data TwacRIr = TwacRIr
-  { implementationMap :: Map.Map Type [TwacRMethod],
+  { implementationMap :: Map.Map Type [ImplementationMapEntry TwacRMethod],
     constructorMap :: Map.Map Type TwacR,
     typeDetailsMap :: TypeDetailsMap
   }
@@ -271,5 +271,7 @@ generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount
 
 generateTwacRIr :: TwacIIr -> TwacRIr
 generateTwacRIr (TwacIr impMap constructorMap typeDetailsMap) =
-  let gen = generateTwacRStatements [] freeRegisters
-   in TwacRIr (Map.mapWithKey (fmap . generateTwacRMethod) impMap) (fmap (generateTwacR []) constructorMap) typeDetailsMap
+  TwacRIr
+    (Map.mapWithKey (\type' -> fmap (fmap (generateTwacRMethod type'))) impMap)
+    (fmap (generateTwacR []) constructorMap)
+    typeDetailsMap

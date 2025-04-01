@@ -17,19 +17,32 @@ data InputIr = InputIr !ClassMap !ImplementationMap !ParentMap !Ast
 
 type ClassMap = Map.Map Type [Attribute]
 
--- The Type in the right hand side is the place where the method is implemented
-type ImplementationMap = Map.Map Type [(Type, Method)]
+type ImplementationMap = Map.Map Type [ImplementationMapEntry Method]
+
+-- If the entry is local, we just need the method itself. If it is from a parent, we only want to know what its name is.
+data ImplementationMapEntry m = LocalImpl !m | ParentImpl !Type !String
+  deriving (Show)
+
+instance Functor ImplementationMapEntry where
+  fmap f (LocalImpl m) = LocalImpl $ f m
+  fmap f (ParentImpl t s) = ParentImpl t s
+
+instance Foldable ImplementationMapEntry where
+  foldMap f (LocalImpl m) = f m
+  foldMap f (ParentImpl t s) = mempty
+
+instance Traversable ImplementationMapEntry where
+  traverse f (LocalImpl m) = LocalImpl <$> f m
+  traverse f (ParentImpl t s) = pure $ ParentImpl t s
+
+implementationMapEntryToMaybe :: ImplementationMapEntry m -> Maybe m
+implementationMapEntryToMaybe (LocalImpl m) = Just m
+implementationMapEntryToMaybe (ParentImpl t s) = Nothing
 
 -- Child to parent
 type ParentMap = Map.Map Type Type
 
 type Ast = [Class]
-
-data ImplementationMapEntry = ImplementationMapEntry !Identifier ![Method]
-  deriving (Show)
-
--- Child then parent
-data ParentMapEntry = ParentMapEntry !Identifier !Identifier
 
 data Class = Class
   { className :: !Identifier,

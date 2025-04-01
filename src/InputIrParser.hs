@@ -53,7 +53,15 @@ parseImplementationMapEntries :: Parser (Type, [ImplementationMapEntry Method])
 parseImplementationMapEntries = do
   class' <- parseType
   methods <- parseList (parseImplementationMapMethod class')
-  pure (class', methods)
+  -- add a placeholder method for the constructor
+  let constructor =
+        LocalImpl $
+          Method
+            { methodName = Identifier 0 ".new",
+              methodFormals = [],
+              methodBody = Typed (Type "INTERNAL") $ Lined 0 Constructor
+            }
+  pure (class', constructor : methods)
 
 parseAst :: Parser Ast
 parseAst = parseList parseClass

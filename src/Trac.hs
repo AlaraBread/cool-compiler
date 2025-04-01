@@ -365,6 +365,7 @@ generateTracExpr
           InputIr.StringConcat -> ([lined' $ Comment "String.concat"],) <$> getVariable
           InputIr.StringLength -> ([lined' $ Comment "String.length"],) <$> getVariable
           InputIr.StringSubstr -> ([lined' $ Comment "String.substr"],) <$> getVariable
+          InputIr.Constructor -> ([lined' $ Comment "*..new"],) <$> getVariable
 
 binaryOperation ::
   ( InputIr.Typed InputIr.Expr ->

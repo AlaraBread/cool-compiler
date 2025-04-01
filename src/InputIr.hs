@@ -101,7 +101,7 @@ data ExprWithoutLine
   | BooleanConstant !Bool
   | Let ![LetBinding] !(Typed Expr)
   | Case !(Typed Expr) ![CaseElement]
-  | -- internal expressions
+  | -- COOL internal expressions
     IOInInt
   | IOInString
   | IOOutInt
@@ -112,6 +112,8 @@ data ExprWithoutLine
   | StringConcat
   | StringLength
   | StringSubstr
+  | -- our own internal expressions
+    Constructor
   deriving (Show)
 
 -- Represents a binding in a let binding.

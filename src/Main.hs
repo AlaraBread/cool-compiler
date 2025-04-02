@@ -54,7 +54,6 @@ main = do
   when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " TwacR: "
   let twacRIr = generateTwacRIr twacIr
   let TwacRIr twacRImpMap _ = twacRIr
-  let mainClassMethods = twacRImpMap Map.! Type "Main"
   let TwacRMethod _ body _ _ = findMethod' TwacR.methodName twacRImpMap
   when debug $ putStrLn $ showTwac body
 

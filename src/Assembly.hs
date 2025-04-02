@@ -44,6 +44,7 @@ data AssemblyStatement
   | Not TwacR.Register
   | Negate TwacR.Register
   | AssemblyLabel Label
+  | Global Label
   | Call Label
   | CallAddress Address
   | Return
@@ -98,6 +99,7 @@ instance Show AssemblyStatement where
           Not dst -> unary "notq" dst
           Negate dst -> unary32 "negl" dst
           AssemblyLabel (Label label) -> label ++ ":"
+          Global (Label label) -> ".globl " ++ label
           Call label -> unary "call" label
           CallAddress addr -> indent $ "call *" ++ show addr
           Return -> indent "ret"
@@ -148,9 +150,8 @@ data AssemblyIr = AssemblyIr
     assemblyIrData :: [AssemblyData]
   }
 
--- TODO: don't just shove main at the beginning.
 instance Show AssemblyIr where
-  show (AssemblyIr code data') = unlines (map show data') ++ "\n\n.globl main\n" ++ unlines (map show code)
+  show (AssemblyIr code data') = unlines (map show data') ++ "\n\n" ++ unlines (map show code)
 
 generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
 generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.typeDetailsMap} =
@@ -527,31 +528,38 @@ sanitizeString = concatMap (\c -> if c == '\\' then "\\\\" else [c])
 
 -- haskell doesn't like circular dependencies 😭
 main' :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
-main' typeDetailsMap =
+main' typeDetailsMap = do
   let type' = InputIr.Type "Main"
-   in combineAssembly
-        <$> mapM
-          (generateAssemblyStatements 1 typeDetailsMap)
-          [ TwacRStatement $ Twac.TwacLabel $ Label "main",
-            TwacR.Push TwacR.Rbx,
-            TwacR.Push TwacR.Rbp,
-            TwacR.Push TwacR.R12,
-            TwacR.Push TwacR.R13,
-            TwacR.Push TwacR.R14,
-            TwacR.Push TwacR.R15,
-            TwacR.AllocateStackSpace 1,
-            TwacRStatement $ Twac.New type' TwacR.Rdi,
-            TwacRStatement $ Twac.Dispatch TwacR.R10 TwacR.Rdi type' Nothing "main" [TwacR.Rdi],
-            TwacR.DeallocateStackSpace 1,
-            TwacR.Pop TwacR.R15,
-            TwacR.Pop TwacR.R14,
-            TwacR.Pop TwacR.R13,
-            TwacR.Pop TwacR.R12,
-            TwacR.Pop TwacR.Rbp,
-            TwacR.Pop TwacR.Rbx,
-            TwacRStatement $ Twac.IntConstant 0 TwacR.Rax,
-            TwacRStatement $ Twac.Return TwacR.Rax
-          ]
+  let label = Label "main"
+  body <-
+    combineAssembly
+      <$> mapM
+        (generateAssemblyStatements 1 typeDetailsMap)
+        [ TwacRStatement $ Twac.TwacLabel label,
+          TwacR.Push TwacR.Rbx,
+          TwacR.Push TwacR.Rbp,
+          TwacR.Push TwacR.R12,
+          TwacR.Push TwacR.R13,
+          TwacR.Push TwacR.R14,
+          TwacR.Push TwacR.R15,
+          TwacR.AllocateStackSpace 1,
+          TwacRStatement $ Twac.New type' TwacR.Rdi,
+          TwacRStatement $ Twac.Dispatch TwacR.R10 TwacR.Rdi type' Nothing "main" [TwacR.Rdi],
+          TwacR.DeallocateStackSpace 1,
+          TwacR.Pop TwacR.R15,
+          TwacR.Pop TwacR.R14,
+          TwacR.Pop TwacR.R13,
+          TwacR.Pop TwacR.R12,
+          TwacR.Pop TwacR.Rbp,
+          TwacR.Pop TwacR.Rbx
+        ]
+  pure $
+    combineAssembly
+      [ ([Global label], []),
+        body,
+        -- TODO: should probably be a xor %rax %rax
+        ([LoadConst 0 TwacR.Rdx, Return], [])
+      ]
 
 -- TODO: write error handling here
 inInt typeDetailsMap =

@@ -206,7 +206,8 @@ generateTwacRStatements epilogue freeRegisters twac =
                   (reverse memoryArgs')
                   ++ argsR
                   ++ [ TwacRStatement $ Dispatch Rax Rdi dispatchReceiverType dispatchType dispatchMethod (take (length dispatchArgs') paramRegisters),
-                       Store Rax dispatchResult
+                       Store Rax dispatchResult,
+                       DeallocateStackSpace (length memoryArgs')
                      ]
         Jump label -> [TwacRStatement $ Jump label]
         TwacLabel label -> [TwacRStatement $ TwacLabel label]

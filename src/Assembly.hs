@@ -167,8 +167,11 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
               inString typeDetailsMap,
               pushString,
               do
-                let methodList = fmap (mapMaybe InputIr.implementationMapEntryToMaybe) (Map.elems implementationMap)
-                methods <- traverse (traverse $ generateAssemblyMethod typeDetailsMap) methodList
+                let methodList =
+                      fmap
+                        (\(type', methods) -> (type', mapMaybe InputIr.implementationMapEntryToMaybe methods))
+                        (Map.toList implementationMap)
+                methods <- traverse (\(type', methods) -> traverse (generateAssemblyMethod type' typeDetailsMap) methods) methodList
                 let (code, data') = traverse combineAssembly methods
                 pure (code, concat data')
             ]
@@ -188,11 +191,11 @@ generateVTable typeDetailsMap (InputIr.Type selfType, entries) =
         ]
       )
 
-generateAssemblyMethod :: TypeDetailsMap -> TwacR.TwacRMethod -> State Temporary ([AssemblyStatement], [AssemblyData])
-generateAssemblyMethod typeDetailsMap method = do
+generateAssemblyMethod :: InputIr.Type -> TypeDetailsMap -> TwacR.TwacRMethod -> State Temporary ([AssemblyStatement], [AssemblyData])
+generateAssemblyMethod selfType typeDetailsMap method = do
   lines <-
     traverse
-      (generateAssemblyStatements (TwacR.registerParamCount method) typeDetailsMap . item)
+      (generateAssemblyStatements selfType (TwacR.registerParamCount method) typeDetailsMap . item)
       (TwacR.body method)
 
   pure $ combineAssembly lines
@@ -269,9 +272,9 @@ vTableMethodAddress r n = Address (Just $ n * 8) r Nothing Nothing
 attributeAddress :: TwacR.Register -> Int -> Address
 attributeAddress reg n = Address (Just $ (n + 3) * 8) reg Nothing Nothing
 
-generateAssemblyStatements :: Int -> TypeDetailsMap -> TwacR.TwacRStatement -> State Temporary ([AssemblyStatement], [AssemblyData])
-generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
-  let generateAssemblyStatements' = generateAssemblyStatements registerParamCount typeDetailsMap
+generateAssemblyStatements :: InputIr.Type -> Int -> TypeDetailsMap -> TwacR.TwacRStatement -> State Temporary ([AssemblyStatement], [AssemblyData])
+generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRStatement =
+  let generateAssemblyStatements' = generateAssemblyStatements selfType registerParamCount typeDetailsMap
       getAddress' = getAddress registerParamCount
       instOnly x = (x, [])
       -- scratch registers
@@ -391,25 +394,46 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
           -- Note: we are guaranteed to not need the self pointer in
           -- non-SELF_TYPE construction.
           Twac.New type' dst ->
-            let TypeDetails tag size _ = typeDetailsMap Map.! type'
-                InputIr.Type typeName = type'
-                vtable = Label $ typeName ++ "..vtable"
-             in pure $
-                  instOnly $
-                    callocWords size
-                      ++ [ Push TwacR.R15,
-                           Transfer TwacR.Rax TwacR.R15,
-                           StoreConst (size * 8) (sizeAddress TwacR.R15),
-                           StoreConst tag (typeTagAddress TwacR.R15),
-                           LoadLabel vtable r1,
-                           Store r1 (vTableAddress TwacR.R15),
-                           Transfer TwacR.R15 TwacR.Rdi,
-                           SubtractImmediate64 8 TwacR.Rsp,
-                           Call $ Label $ typeName ++ "..new",
-                           AddImmediate64 8 TwacR.Rsp,
-                           Transfer TwacR.R15 dst,
-                           Pop TwacR.R15
-                         ]
+            case type' of
+              InputIr.Type "SELF_TYPE" ->
+                pure $
+                  instOnly
+                    [ Push TwacR.Rdi,
+                      Load (sizeAddress TwacR.R15) TwacR.Rdi,
+                      LoadConst 1 TwacR.Rsi,
+                      Call $ Label "calloc",
+                      Transfer TwacR.Rax TwacR.Rdi,
+                      Load (sizeAddress TwacR.R15) r1,
+                      Store r1 (sizeAddress TwacR.Rdi),
+                      Load (typeTagAddress TwacR.R15) r1,
+                      Store r1 (typeTagAddress TwacR.Rdi),
+                      Load (vTableAddress TwacR.R15) r1,
+                      Store r1 (vTableAddress TwacR.Rdi),
+                      Store TwacR.Rdi $ Address (Just 8) TwacR.Rsp Nothing Nothing,
+                      CallAddress (vTableMethodAddress r1 0),
+                      Load (Address (Just 8) TwacR.Rsp Nothing Nothing) TwacR.Rdi,
+                      Transfer TwacR.Rdi dst,
+                      Pop TwacR.Rdi
+                    ]
+              InputIr.Type typeName ->
+                let TypeDetails tag size _ = typeDetailsMap Map.! type'
+                    vtable = Label $ typeName ++ "..vtable"
+                 in pure $
+                      instOnly $
+                        callocWords size
+                          ++ [ Push TwacR.R15,
+                               Transfer TwacR.Rax TwacR.R15,
+                               StoreConst (size * 8) (sizeAddress TwacR.R15),
+                               StoreConst tag (typeTagAddress TwacR.R15),
+                               LoadLabel vtable r1,
+                               Store r1 (vTableAddress TwacR.R15),
+                               Transfer TwacR.R15 TwacR.Rdi,
+                               SubtractImmediate64 8 TwacR.Rsp,
+                               Call $ Label $ typeName ++ "..new",
+                               AddImmediate64 8 TwacR.Rsp,
+                               Transfer TwacR.R15 dst,
+                               Pop TwacR.R15
+                             ]
           Twac.Default type' dst ->
             let delegateToNew = generateAssemblyStatements' $ TwacRStatement $ Twac.New type' dst
              in case type' of
@@ -434,7 +458,16 @@ generateAssemblyStatements registerParamCount typeDetailsMap twacRStatement =
               -- Static dispatch; this is easy! We like this.
               Just (InputIr.Type t) -> pure $ instOnly [Call $ Label $ t ++ "." ++ dispatchMethod]
               Nothing ->
-                let methodTag = (methodTags (typeDetailsMap Map.! dispatchReceiverType) Map.! dispatchMethod)
+                let InputIr.Type dispatchReceiverTypeName = dispatchReceiverType
+                    methodTag =
+                      methodTags
+                        ( typeDetailsMap
+                            Map.! ( if dispatchReceiverTypeName == "SELF_TYPE"
+                                      then selfType
+                                      else dispatchReceiverType
+                                  )
+                        )
+                        Map.! dispatchMethod
                  in pure $
                       instOnly
                         [ Load (vTableAddress dispatchReceiver) r1,
@@ -534,7 +567,7 @@ main' typeDetailsMap = do
   body <-
     combineAssembly
       <$> mapM
-        (generateAssemblyStatements 1 typeDetailsMap)
+        (generateAssemblyStatements (InputIr.Type "") 1 typeDetailsMap)
         [ TwacRStatement $ Twac.TwacLabel label,
           TwacR.Push TwacR.Rbx,
           TwacR.Push TwacR.Rbp,
@@ -692,12 +725,13 @@ outString = do
       []
     )
 
+inString :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 inString typeDetailsMap =
   do
     loop <- getLabel
     endLoop <- getLabel
     let registerParamCount = 2
-        generateAssemblyStatements' = generateAssemblyStatements registerParamCount typeDetailsMap
+        generateAssemblyStatements' = generateAssemblyStatements (InputIr.Type "") registerParamCount typeDetailsMap
     (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.Rax
     pure
       ( [ AssemblyLabel $ Label "in_string",

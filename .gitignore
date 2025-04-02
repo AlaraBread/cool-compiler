@@ -4,6 +4,7 @@
 tmp/
 build/
 src/main
+src/Main
 *.o
 *.hi
 .direnv/

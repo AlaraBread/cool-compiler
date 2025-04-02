@@ -1,8 +1,8 @@
 #!/bin/bash
 
 cd src
-ghc main.hs -outputdir ../build
+ghc Main.hs -prof -fprof-auto -outputdir ../build
 cd ..
 cool --type "$1"
-./src/main "${1%.*}.cl-type"
-gcc -no-pie -static "${1%.*}.s"
+./src/main "${1%.*}.cl-type" +RTS -xc
+gcc -g -no-pie -static "${1%.*}.s"

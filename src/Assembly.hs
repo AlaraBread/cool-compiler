@@ -166,6 +166,7 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
               outString,
               inString typeDetailsMap,
               pushString,
+              abort,
               do
                 let methodList =
                       fmap
@@ -519,7 +520,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   InputIr.IOInString -> call "in_string"
                   InputIr.IOOutInt -> call "out_int"
                   InputIr.IOOutString -> call "out_string"
-                  InputIr.ObjectAbort -> comment "abort"
+                  InputIr.ObjectAbort -> call "abort"
                   InputIr.ObjectCopy -> comment "copy"
                   InputIr.ObjectTypeName -> comment "type_name"
                   InputIr.StringConcat -> comment "concat"
@@ -557,7 +558,12 @@ setBool boolReg conditionalJump = do
 
 -- asm strings can have escape codes
 sanitizeString :: String -> String
-sanitizeString = concatMap (\c -> if c == '\\' then "\\\\" else [c])
+sanitizeString = concatMap sanitizeChar
+
+sanitizeChar :: Char -> [Char]
+sanitizeChar '\\' = "\\\\"
+sanitizeChar '\n' = "\\n"
+sanitizeChar c = [c]
 
 -- haskell doesn't like circular dependencies 😭
 main' :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
@@ -836,4 +842,18 @@ pushString = do
         Return
       ],
       []
+    )
+
+abort = do
+  abortString <- getLabel
+  pure
+    ( [ AssemblyLabel $ Label "abort",
+        SubtractImmediate64 8 TwacR.Rsp,
+        LoadLabel abortString TwacR.Rdi,
+        Call $ Label "puts",
+        LoadConst 0 TwacR.Rdi,
+        Call $ Label "exit"
+        -- dont need to cleanup because we wont return from exit
+      ],
+      [StringConstant abortString "abort"]
     )

@@ -654,6 +654,10 @@ outString = do
     ( [ AssemblyLabel $ Label "out_string",
         Load (attributeAddress TwacR.Rsi 0) TwacR.R8,
         Load (attributeAddress TwacR.Rsi 1) TwacR.Rcx,
+        CmpConst 0 TwacR.Rcx,
+        JumpZero end,
+        CmpConst 0 TwacR.R8,
+        JumpZero end,
         LoadConst 0 TwacR.Rsi, -- keep track of backslashes
         LoadConst 0 TwacR.Rdx, -- loop counter
         AssemblyLabel loop,
@@ -773,7 +777,7 @@ pushString = do
   nonNull <- getLabel
   pure
     ( [ AssemblyLabel $ Label "push_string",
-        SubtractImmediate64 8 TwacR.Rsp,
+        Push TwacR.R10,
         Load (attributeAddress TwacR.Rdi 0) TwacR.R9, -- string pointer
         CmpConst 0 TwacR.R9,
         JumpNonZero nonNull,
@@ -810,14 +814,14 @@ pushString = do
         Pop TwacR.Rcx,
         Pop TwacR.Rdx,
         --
-        Load (attributeAddress TwacR.Rdi 0) TwacR.Rdx, -- old string pointer
+        Load (attributeAddress TwacR.Rdi 0) TwacR.R10, -- old string pointer
         Store TwacR.Rax (attributeAddress TwacR.Rdi 0), -- set new string pointer
         Store TwacR.Rdx (attributeAddress TwacR.Rdi 2), -- store new capacity
         LoadConst 0 TwacR.R8,
         AssemblyLabel copyLoop,
         Cmp TwacR.R8 TwacR.Rcx,
         JumpLessThanEqual endCopyLoop,
-        LoadByte (Address (Just 0) TwacR.Rdx (Just TwacR.R8) (Just 1)) TwacR.R9,
+        LoadByte (Address (Just 0) TwacR.R10 (Just TwacR.R8) (Just 1)) TwacR.R9,
         StoreByte TwacR.R9 $ Address (Just 0) TwacR.Rax (Just TwacR.R8) (Just 1),
         AddImmediate 1 TwacR.R8,
         Jump copyLoop,
@@ -828,7 +832,7 @@ pushString = do
         StoreByte TwacR.Rsi $ Address (Just 0) TwacR.Rax (Just TwacR.Rcx) (Just 1),
         AddImmediate 1 TwacR.Rcx,
         Store TwacR.Rcx $ attributeAddress TwacR.Rdi 1,
-        AddImmediate64 8 TwacR.Rsp,
+        Pop TwacR.R10,
         Return
       ],
       []

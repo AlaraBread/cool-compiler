@@ -128,7 +128,7 @@ data LetBinding = LetBinding {letBindingName :: !Identifier, letBindingType' :: 
   deriving (Show)
 
 -- Represents a case element.
-data CaseElement = CaseElement {caseElementVariable :: !Identifier, caseElementType :: !Identifier, caseElementBody :: !(Typed Expr)}
+data CaseElement = CaseElement {caseElementVariable :: !Identifier, caseElementType :: !Type, caseElementBody :: !(Typed Expr)}
   deriving (Show)
 
 -- Type type.

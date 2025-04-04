@@ -35,17 +35,18 @@ main = do
   input <- readFile inputFile
   let inputIr = InputIrParser.parse input
 
-  -- this is used by generateTwac to make jump tables for case statements
   let (InputIr classMap _ parentMap _) = inputIr
+  -- this is used by generateTrac to make jump tables for case statements
   let pickLowestParents' = pickLowestParents classMap parentMap
 
   when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Trac: "
-  let (tracIr, temporaryState) = generateTrac inputIr
+  let (tracIr, temporaryState) = generateTrac pickLowestParents' inputIr
   let (TracIr tracImpMap _) = tracIr
   let TracMethod _ body _ _ = findMethod' Trac.methodName tracImpMap
   when debug $ putStrLn $ showTrac body
 
   when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Twac: "
+  -- TODO: twac does not need pickLowestParents anymore
   let (twacIr, temporaryState') = generateTwac pickLowestParents' tracIr temporaryState
   let TwacIr twacImpMap _ = twacIr
   let TwacMethod _ body _ _ = findMethod' Twac.methodName twacImpMap

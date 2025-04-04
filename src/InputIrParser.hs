@@ -187,7 +187,7 @@ parseLetBinding = do
 
 -- Parses a single case element.
 parseCaseElement :: Parser CaseElement
-parseCaseElement = CaseElement <$> parseIdentifier <*> parseIdentifier <*> parseExpr
+parseCaseElement = CaseElement <$> parseIdentifier <*> (identifierToType <$> parseIdentifier) <*> parseExpr
 
 identifierToType :: Identifier -> Type
 identifierToType (Identifier _ lexeme) = Type lexeme

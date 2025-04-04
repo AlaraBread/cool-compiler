@@ -53,12 +53,9 @@ data TwacStatement v
   | ConditionalJump v Label
   | Assign v v
   | Copy v v
-  | TwacCase v CaseJmpTable
+  | TwacCase v (Map.Map Type Label)
   | Abort Int String
   | TwacInternal InputIr.Internal
-
--- NOTE: this should include *every single* type.
-type CaseJmpTable = Map.Map Type Label
 
 data TwacIr v = TwacIr
   { implementationMap :: Map.Map InputIr.Type [InputIr.ImplementationMapEntry (TwacMethod v)],
@@ -138,35 +135,9 @@ generateTwacStatement pickLowestParents tracStatement = case tracStatement of
   Trac.Comment c -> pure [Comment c]
   Trac.ConditionalJump v l -> pure [ConditionalJump v l]
   Trac.Assign dst src -> pure [Assign src dst]
-  Trac.Case outputVariable (initializer, caseOf) caseElements -> do
-    initializer' <- tracToTwac pickLowestParents initializer
-    let types = fmap (\(Trac.CaseElement t _) -> t) caseElements
-
-    caseElementLabels <- mapM (\(Trac.CaseElement {}) -> getLabel) caseElements
-
-    errorCaseLabel <- getLabel
-    -- TODO: include the line number
-    let errorCase = [TwacLabel errorCaseLabel, Abort 0 "no match found for case :<"]
-
-    terminatingLabel <- getLabel
-
-    caseElementBodies <-
-      mapM
-        ( \(Trac.CaseElement _ (trac, v), l) ->
-            (++ [Lined 0 $ TwacLabel l, Lined 0 $ Assign v outputVariable, Lined 0 $ Jump terminatingLabel])
-              <$> tracToTwac pickLowestParents trac
-        )
-        $ zip caseElements caseElementLabels
-
-    let caseLabelTable = Map.fromList $ zip types caseElementLabels
-    let jumpTable = maybe errorCaseLabel (caseLabelTable Map.!) <$> pickLowestParents types
-
-    -- TODO: THIS LOSES LINE NUMBERS ON THE ELEMENT BODIES. THAT IS BAD.
-    pure $
-      [Assign caseOf outputVariable, TwacCase outputVariable jumpTable]
-        ++ concatMap (fmap item) caseElementBodies
-        ++ errorCase
+  Trac.Case resultVariable caseVariable jumpTable -> pure [TwacCase caseVariable jumpTable]
   Trac.TracInternal internal -> pure [TwacInternal internal]
+  Trac.Abort line str -> pure [Abort line str]
 
 -- I cannot tell if this is the most beautiful or the most ugly code I have
 -- written. I think I am leaning towards the most ugly. This is hyperbole of

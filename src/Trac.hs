@@ -58,10 +58,11 @@ data TracStatement
   | Comment String
   | ConditionalJump Variable Label
   | Assign Variable Variable
-  | Case Variable (Trac, Variable) [CaseElement]
+  | -- The map *must* cover every possible type, as later this gets lowered to a jump table
+    -- dst, src, jumptable
+    Case Variable Variable (Map.Map InputIr.Type Label)
   | TracInternal InputIr.Internal
-
-data CaseElement = CaseElement InputIr.Type (Trac, Variable)
+  | Abort Int String
 
 instance Show TracStatement where
   show t = case t of
@@ -93,8 +94,9 @@ instance Show TracStatement where
     Comment msg -> "comment " ++ msg
     ConditionalJump a l -> "bt " ++ show a ++ " " ++ show l
     Assign a b -> show a ++ " <- " ++ show b
-    Case v e elements -> "comment case :3" -- dont bother outputting case statements for now
+    Case dst src labels -> show dst ++ " <- case " ++ show src ++ " " ++ show labels
     TracInternal internal -> "internal: " ++ show internal
+    Abort line message -> "abort " ++ show line ++ " " ++ message
 
 showBinary :: Variable -> Variable -> Variable -> String -> String
 showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c
@@ -127,12 +129,14 @@ getLabel :: State Temporary Label
 getLabel = state $ \(Temporary l t) -> (Label $ "l" ++ show (l + 1), Temporary (l + 1) t)
 
 generateTracExpr ::
+  ([InputIr.Type] -> Map.Map InputIr.Type (Maybe InputIr.Type)) ->
   InputIr.ClassMap ->
   Map.Map String Variable ->
   InputIr.Type ->
   InputIr.Typed InputIr.Expr ->
   State Temporary (Trac, Variable)
 generateTracExpr
+  pickLowestParents
   classMap
   bindingMap
   selfType
@@ -155,7 +159,7 @@ generateTracExpr
         linedUnary = compose2 lined'
         linedBinary = compose3 lined'
 
-        generateTracExpr' = generateTracExpr classMap bindingMap selfType
+        generateTracExpr' = generateTracExpr pickLowestParents classMap bindingMap selfType
      in case expr of
           InputIr.Assign
             InputIr.Identifier
@@ -329,7 +333,7 @@ generateTracExpr
 
             initializer <- case rhs of
               Just rhs' -> do
-                (rhsTrac, rhsV) <- generateTracExpr classMap bindingMap selfType rhs'
+                (rhsTrac, rhsV) <- generateTracExpr pickLowestParents classMap bindingMap selfType rhs'
                 pure $
                   rhsTrac
                     ++ [ Lined (InputIr.line bindingName) $ Comment $ InputIr.lexeme bindingName ++ " <- rhs",
@@ -337,30 +341,58 @@ generateTracExpr
                        ]
               Nothing -> pure []
 
-            (restTrac, restV) <- generateTracExpr classMap bindingMap' selfType $ InputIr.Typed type' $ lined' $ InputIr.Let rest body
+            (restTrac, restV) <-
+              generateTracExpr pickLowestParents classMap bindingMap' selfType $
+                InputIr.Typed type' $
+                  lined' $
+                    InputIr.Let rest body
 
             pure (defaultInitializer ++ initializer ++ restTrac, restV)
           InputIr.Case e elements -> do
-            (eTrac, eV) <- generateTracExpr' e
-            a <-
+            (caseVariableTrac, caseVariable) <- generateTracExpr' e
+            resultVariable <- getVariable
+            endLabel <- getLabel
+            elements' <-
               traverse
                 ( \InputIr.CaseElement
                      { InputIr.caseElementVariable = InputIr.Identifier {InputIr.lexeme = caseElementVariable},
-                       InputIr.caseElementType = InputIr.Identifier {InputIr.lexeme = caseElementType},
+                       InputIr.caseElementType,
                        InputIr.caseElementBody
                      } -> do
-                      let bindingMap' = Map.insert caseElementVariable eV bindingMap
-                      body <- generateTracExpr classMap bindingMap' selfType caseElementBody
+                      let bindingMap' = Map.insert caseElementVariable caseVariable bindingMap
+                      label <- getLabel
+                      (body, bodyVariable) <-
+                        generateTracExpr pickLowestParents classMap bindingMap' selfType caseElementBody
                       pure $
-                        CaseElement
-                          (InputIr.Type caseElementType)
-                          body
+                        ( caseElementType,
+                          label,
+                          [lined' $ TracLabel label] ++ body ++ [lined' $ Assign resultVariable bodyVariable, lined' $ Jump endLabel]
+                        )
                 )
                 elements
-            pure (eTrac, eV)
+
+            let caseTypeToLabelMap = Map.fromList $ map (\(type', label, _) -> (type', label)) elements'
+            let trac = concatMap (\(_, _, t) -> t) elements'
+
+            abortLabel <- getLabel
+            let abortCode = map lined' [TracLabel abortLabel, Abort line_number "case without matching branch"]
+
+            let typeToParentMap = pickLowestParents (Map.keys caseTypeToLabelMap)
+            let typeToLabel (Just p) = caseTypeToLabelMap Map.! p
+                typeToLabel Nothing = abortLabel
+            let typeToLabelMap = Map.map typeToLabel typeToParentMap
+
+            pure $
+              ( caseVariableTrac
+                  ++ [lined' $ Case resultVariable caseVariable typeToLabelMap]
+                  ++ trac
+                  ++ abortCode
+                  ++ [lined' $ TracLabel endLabel],
+                resultVariable
+              )
           InputIr.InputInternal internal -> ([Lined 0 $ TracInternal internal],) <$> getVariable
           InputIr.Constructor -> do
-            constructor <- generateTracConstructor classMap selfType
+            constructor <- generateTracConstructor pickLowestParents classMap selfType
             eV <- getVariable
             pure (constructor, eV)
 
@@ -407,8 +439,14 @@ generateAttributeMap attributes =
       (map (InputIr.lexeme . InputIr.attrName) attributes)
       (map AttributeV [0 ..])
 
-generateTracMethod :: InputIr.ClassMap -> [InputIr.Attribute] -> InputIr.Type -> InputIr.Method -> State Temporary TracMethod
-generateTracMethod classMap attributes type' (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
+generateTracMethod ::
+  ([InputIr.Type] -> Map.Map InputIr.Type (Maybe InputIr.Type)) ->
+  InputIr.ClassMap ->
+  [InputIr.Attribute] ->
+  InputIr.Type ->
+  InputIr.Method ->
+  State Temporary TracMethod
+generateTracMethod pickLowestParents classMap attributes type' (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
   modify (\(Trac.Temporary l t) -> Trac.Temporary l 0)
 
   let temporaryMap = Map.empty
@@ -420,7 +458,7 @@ generateTracMethod classMap attributes type' (InputIr.Method {InputIr.methodName
 
   let bindingMap = Map.union paramMap attributeMap
 
-  (trac, v) <- generateTracExpr classMap bindingMap type' methodBody
+  (trac, v) <- generateTracExpr pickLowestParents classMap bindingMap type' methodBody
   temporaryCount' <- gets (\(Temporary l t) -> t)
   let InputIr.Type typeName = type'
       -- Do not touch internal instructions
@@ -435,8 +473,12 @@ generateTracMethod classMap attributes type' (InputIr.Method {InputIr.methodName
             temporaryCount = temporaryCount'
           }
 
-generateTracConstructor :: InputIr.ClassMap -> InputIr.Type -> State Temporary Trac
-generateTracConstructor classMap selfType = do
+generateTracConstructor ::
+  ([InputIr.Type] -> Map.Map InputIr.Type (Maybe InputIr.Type)) ->
+  InputIr.ClassMap ->
+  InputIr.Type ->
+  State Temporary Trac
+generateTracConstructor pickLowestParents classMap selfType = do
   let attrs = classMap Map.! selfType
   let attributeMap = generateAttributeMap attrs
   let bindingMap = Map.insert "self" (ParameterV 0) attributeMap
@@ -450,22 +492,25 @@ generateTracConstructor classMap selfType = do
            idx
            ) -> case attrRhs of
             Just e -> do
-              (trac, v) <- generateTracExpr classMap attributeMap selfType e
+              (trac, v) <- generateTracExpr pickLowestParents classMap attributeMap selfType e
               pure $ trac ++ [Lined line $ Assign (AttributeV idx) v]
             Nothing -> pure [Lined line $ Default (AttributeV idx) attrType]
       )
       (zip attrs [0, 1 ..])
   pure $ concat attrs'
 
-generateTrac :: InputIr.InputIr -> (TracIr, Temporary)
-generateTrac (InputIr.InputIr classMap implMap parentMap ast) =
+generateTrac ::
+  ([InputIr.Type] -> Map.Map InputIr.Type (Maybe InputIr.Type)) ->
+  InputIr.InputIr ->
+  (TracIr, Temporary)
+generateTrac pickLowestParents (InputIr.InputIr classMap implMap parentMap ast) =
   runState
     ( do
         implMap' <-
           sequence $
             Map.mapWithKey
               ( mapM
-                  . ( \name method -> traverse (generateTracMethod classMap (classMap Map.! name) name) method
+                  . ( \name method -> traverse (generateTracMethod pickLowestParents classMap (classMap Map.! name) name) method
                     )
               )
               implMap

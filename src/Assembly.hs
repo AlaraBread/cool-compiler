@@ -57,6 +57,7 @@ data AssemblyStatement
   | JumpGreaterThanEqual Label
   | LoadLabel Label TwacR.Register
   | JumpAddress Address
+  | JumpRegister TwacR.Register
   | Comment String
 
 instance Show AssemblyStatement where
@@ -111,12 +112,13 @@ instance Show AssemblyStatement where
           JumpGreaterThan label -> unary "jg" label
           JumpGreaterThanEqual label -> unary "jge" label
           LoadLabel label dst -> binary "leaq" label dst
-          JumpAddress addr -> unary "jmp" addr
+          JumpAddress addr -> indent $ "jmp *" ++ show addr
           Comment string -> indent $ "## " ++ string
 
 data AssemblyData
   = JumpTable Label [Label]
   | StringConstant Label String
+  | RawStringConstant Label String
   | VTable
       { vTableLabel :: Label,
         vTableMethods :: [Label]
@@ -125,7 +127,10 @@ data AssemblyData
 -- TODO: handle the other types of data (not needed for PA3c3)
 instance Show AssemblyData where
   show data' = case data' of
+    -- this is the exact same as VTables, lol
+    JumpTable label entries -> show label ++ ":\n" ++ unlines (map ((++) "    .quad " . show) entries)
     StringConstant label text -> show label ++ ": .string \"" ++ sanitizeString text ++ "\""
+    RawStringConstant label text -> show label ++ ": .string \"" ++ text ++ "\""
     -- this is directly taken from the reference compiler
     VTable label entries -> show label ++ ":\n" ++ unlines (map ((++) "    .quad " . show) entries)
 
@@ -509,9 +514,32 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   Transfer rCallee2 dst,
                   Comment $ "end copy " ++ show src ++ " " ++ show dst
                 ]
-          Twac.TwacCase condition jmpTable -> undefined
-          Twac.Abort line string -> undefined
-          -- TODO: replace commments with calls as we right the code
+          Twac.TwacCase conditionVariable jumpTable -> do
+            jumpTableLabel <- getLabel
+            -- TODO: check for case on void
+            -- TODO: (PA4) we can definitely optimize this assembly
+            let code =
+                  [ LoadLabel jumpTableLabel r1,
+                    Load (typeTagAddress conditionVariable) r2,
+                    MultiplyConst 8 r2,
+                    Add r2 r1,
+                    JumpAddress (Address Nothing r1 Nothing Nothing)
+                  ]
+            pure (code, [JumpTable jumpTableLabel (Map.elems jumpTable)])
+          Twac.Abort line string -> do
+            -- TODO: deduplicate identical error lines
+            messageLabel <- getLabel
+            let message = "Error: %d: Exception: " ++ string ++ "\\n"
+            pure
+              ( [ LoadLabel messageLabel TwacR.Rdi,
+                  LoadConst line TwacR.Rsi,
+                  Call $ Label "printf",
+                  LoadConst 1 TwacR.Rdi,
+                  Call $ Label "exit"
+                ],
+                [RawStringConstant messageLabel message]
+              )
+          -- TODO: replace commments with calls as we write the code
           Twac.TwacInternal internal ->
             let call function = pure $ instOnly [SubtractImmediate64 8 TwacR.Rsp, Call $ Label function, AddImmediate64 8 TwacR.Rsp, Return]
                 comment function = pure $ instOnly [SubtractImmediate64 8 TwacR.Rsp, Comment function, AddImmediate64 8 TwacR.Rsp, Return]

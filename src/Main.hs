@@ -46,8 +46,7 @@ main = do
   when debug $ putStrLn $ showTrac body
 
   when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Twac: "
-  -- TODO: twac does not need pickLowestParents anymore
-  let (twacIr, temporaryState') = generateTwac pickLowestParents' tracIr temporaryState
+  let (twacIr, temporaryState') = generateTwac tracIr temporaryState
   let TwacIr twacImpMap _ = twacIr
   let TwacMethod _ body _ _ = findMethod' Twac.methodName twacImpMap
   when debug $ putStrLn $ showTwac body

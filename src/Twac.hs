@@ -111,8 +111,8 @@ generateBinaryStatement :: (Variable -> Variable -> TwacIStatement) -> Variable 
 generateBinaryStatement op dst src1 src2 =
   [Copy src1 dst, op src2 dst]
 
-generateTwacStatement :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracStatement -> State Temporary [TwacIStatement]
-generateTwacStatement pickLowestParents tracStatement = case tracStatement of
+generateTwacStatement :: Trac.TracStatement -> State Temporary [TwacIStatement]
+generateTwacStatement tracStatement = case tracStatement of
   Trac.Add dst src1 src2 -> pure $ generateBinaryStatement Add dst src1 src2
   Trac.Subtract dst src1 src2 -> pure $ generateBinaryStatement Subtract dst src1 src2
   Trac.Multiply dst src1 src2 -> pure $ generateBinaryStatement Multiply dst src1 src2
@@ -143,20 +143,20 @@ generateTwacStatement pickLowestParents tracStatement = case tracStatement of
 -- written. I think I am leaning towards the most ugly. This is hyperbole of
 -- course, but it's... certainly something. Honestly, I constructed it through
 -- iterating away type errors.
-tracToTwac :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.Trac -> State Temporary TwacI
-tracToTwac pickLowestParents trac =
-  concatMap unsequence <$> mapM (mapM (generateTwacStatement pickLowestParents)) trac
+tracToTwac :: Trac.Trac -> State Temporary TwacI
+tracToTwac trac =
+  concatMap unsequence <$> mapM (mapM generateTwacStatement) trac
 
-generateTwacMethod :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracMethod -> State Temporary (TwacMethod Variable)
-generateTwacMethod pickLowestParents (Trac.TracMethod methodName body formals temporaryCount) = do
+generateTwacMethod :: Trac.TracMethod -> State Temporary (TwacMethod Variable)
+generateTwacMethod (Trac.TracMethod methodName body formals temporaryCount) = do
   modify (\(Trac.Temporary l t) -> Trac.Temporary l temporaryCount)
-  body' <- tracToTwac pickLowestParents body
+  body' <- tracToTwac body
   temporaryCount' <- gets (\(Trac.Temporary l t) -> t)
   pure $ TwacMethod methodName body' formals temporaryCount'
 
-generateTwac :: ([Type] -> Map.Map Type (Maybe Type)) -> Trac.TracIr -> Temporary -> (TwacIr Variable, Temporary)
-generateTwac pickLowestParents (Trac.TracIr impMap typeDetailsMap) =
+generateTwac :: Trac.TracIr -> Temporary -> (TwacIr Variable, Temporary)
+generateTwac (Trac.TracIr impMap typeDetailsMap) =
   runState $
     TwacIr
-      <$> traverse (traverse (traverse $ generateTwacMethod pickLowestParents)) impMap
+      <$> traverse (traverse (traverse $ generateTwacMethod)) impMap
       <*> pure typeDetailsMap

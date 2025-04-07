@@ -430,9 +430,18 @@ generateTracExpr
                 typeToLabel Nothing = abortLabel
             let typeToLabelMap = Map.map typeToLabel typeToParentMap
 
+            isVoid <- getVariable
+            isNotVoid <- getVariable
+            isNotVoidLabel <- getLabel
             pure
               ( caseVariableTrac
-                  ++ [lined' $ Case resultVariable caseVariable typeToLabelMap]
+                  ++ [ lined' $ IsVoid isVoid caseVariable,
+                       lined' $ Not isNotVoid isVoid,
+                       lined' $ ConditionalJump isNotVoid isNotVoidLabel,
+                       lined' $ Abort lineNumber CaseOnVoid,
+                       lined' $ TracLabel isNotVoidLabel,
+                       lined' $ Case resultVariable caseVariable typeToLabelMap
+                     ]
                   ++ trac
                   ++ abortCode
                   ++ [lined' $ TracLabel endLabel],

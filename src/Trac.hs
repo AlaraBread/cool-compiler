@@ -150,13 +150,13 @@ generateTracExpr
   selfType
   InputIr.Typed
     { InputIr.type',
-      InputIr.item = Lined line_number expr
+      InputIr.item = Lined lineNumber expr
     } =
     let lined :: InputIr.Typed InputIr.Expr -> a -> Lined a
         lined e = Lined (line $ InputIr.item e)
 
         lined' :: a -> Lined a
-        lined' = Lined line_number
+        lined' = Lined lineNumber
 
         compose2 :: (b -> c) -> (a -> a -> b) -> (a -> a -> c)
         compose2 g f p1 p2 = g $ f p1 p2
@@ -314,15 +314,37 @@ generateTracExpr
           InputIr.Plus a b -> binaryOperation generateTracExpr' a b $ linedBinary Add
           InputIr.Minus a b -> binaryOperation generateTracExpr' a b $ linedBinary Subtract
           InputIr.Times a b -> binaryOperation generateTracExpr' a b $ linedBinary Multiply
-          InputIr.Divide a b -> binaryOperation generateTracExpr' a b $ linedBinary Divide
+          InputIr.Divide a b -> do
+            (aTrac, aV) <- generateTracExpr' a
+            (bTrac, bV) <- generateTracExpr' b
+
+            isNotZeroLabel <- getLabel
+            zero <- getVariable
+            isZero <- getVariable
+            isNotZero <- getVariable
+
+            resultV <- getVariable
+            pure
+              ( aTrac
+                  ++ bTrac
+                  ++ [ lined' $ IntConstant zero 0,
+                       lined' $ Equals isZero zero bV,
+                       lined' $ Not isNotZero isZero,
+                       lined' $ ConditionalJump isNotZero isNotZeroLabel,
+                       lined' $ Abort lineNumber DivisionByZero,
+                       lined' $ TracLabel isNotZeroLabel,
+                       linedBinary Divide resultV aV bV
+                     ],
+                resultV
+              )
           InputIr.LessThan a b -> binaryOperation generateTracExpr' a b $ linedBinary LessThan
           InputIr.LessThanOrEqualTo a b -> binaryOperation generateTracExpr' a b $ linedBinary LessThanOrEqualTo
           InputIr.Equal a b -> binaryOperation generateTracExpr' a b $ linedBinary Equals
           InputIr.Not exp -> unaryOperation generateTracExpr' exp $ linedUnary Not
           InputIr.Negate exp -> unaryOperation generateTracExpr' exp $ linedUnary Negate
-          InputIr.IntegerConstant i -> constant line_number IntConstant i
-          InputIr.StringConstant s -> constant line_number StringConstant s
-          InputIr.BooleanConstant b -> constant line_number BoolConstant b
+          InputIr.IntegerConstant i -> constant lineNumber IntConstant i
+          InputIr.StringConstant s -> constant lineNumber StringConstant s
+          InputIr.BooleanConstant b -> constant lineNumber BoolConstant b
           InputIr.Variable InputIr.Identifier {InputIr.lexeme} ->
             pure ([], resolveVariable bindingMap lexeme)
           -- Handle Let with no bindings; this is our base case.
@@ -383,7 +405,7 @@ generateTracExpr
             let trac = concatMap (\(_, _, t) -> t) elements'
 
             abortLabel <- getLabel
-            let abortCode = map lined' [TracLabel abortLabel, Abort line_number CaseNoMatch]
+            let abortCode = map lined' [TracLabel abortLabel, Abort lineNumber CaseNoMatch]
 
             let typeToParentMap = pickLowestParents (Map.keys caseTypeToLabelMap)
             let typeToLabel (Just p) = caseTypeToLabelMap Map.! p

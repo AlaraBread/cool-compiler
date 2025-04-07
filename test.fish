@@ -1,6 +1,6 @@
 #!/usr/bin/env fish
 
-set dir examples/pa3c3-subset
+set dir examples/basic
 
 mkdir -p test-out
 

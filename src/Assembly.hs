@@ -173,6 +173,8 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
               outString,
               inString typeDetailsMap,
               pushString,
+              concatString typeDetailsMap,
+              objectCopy,
               abort,
               errorMessages,
               do
@@ -555,9 +557,9 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   InputIr.IOOutInt -> call "out_int"
                   InputIr.IOOutString -> call "out_string"
                   InputIr.ObjectAbort -> call "abort"
-                  InputIr.ObjectCopy -> comment "copy"
+                  InputIr.ObjectCopy -> call "copy"
                   InputIr.ObjectTypeName -> comment "type_name"
-                  InputIr.StringConcat -> comment "concat"
+                  InputIr.StringConcat -> call "concat"
                   InputIr.StringLength -> comment "length"
                   InputIr.StringSubstr -> comment "substr"
 
@@ -878,6 +880,7 @@ pushString = do
       []
     )
 
+abort :: State Temporary ([AssemblyStatement], [AssemblyData])
 abort = do
   abortString <- getLabel
   pure
@@ -901,4 +904,57 @@ errorMessages =
         RawStringConstant (Label "division_by_zero") "Error: %d: Exception: division by zero. unfortunately, this is nonsense in ℤ₄₂₉₄₉₆₇₂₉₆ :<\\n",
         RawStringConstant (Label "substring_out_of_range") "Error: %d: Exception: substring out of range :<\\n"
       ]
+    )
+
+concatString :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
+concatString typeDetailsMap = do
+  let registerParamCount = 2
+      generateAssemblyStatements' = generateAssemblyStatements (InputIr.Type "") registerParamCount typeDetailsMap
+  (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.Rdi
+  pure
+    ( [ AssemblyLabel $ Label "concat",
+        SubtractImmediate64 8 TwacR.Rsp,
+        Push TwacR.Rdi,
+        Push TwacR.Rsi
+      ]
+        ++ newString
+        ++ [ Call $ Label "copy",
+             Pop TwacR.Rsi,
+             Pop TwacR.Rdi,
+             Load (attributeAddress TwacR.Rsi 1) TwacR.R9,
+             Load (attributeAddress TwacR.Rdi 1) TwacR.Rcx,
+             Add TwacR.R9 TwacR.Rcx,
+             Load (attributeAddress TwacR.Rax 0) TwacR.Rdi,
+             Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
+             SubtractImmediate64 8 TwacR.Rsp,
+             Push TwacR.Rax,
+             Call $ Label "memcpy",
+             Pop TwacR.Rax,
+             AddImmediate64 16 TwacR.Rsp,
+             Return
+           ],
+      []
+    )
+
+objectCopy =
+  pure
+    ( [ AssemblyLabel $ Label "copy",
+        Load (sizeAddress TwacR.Rdi) TwacR.R8,
+        SubtractImmediate64 8 TwacR.Rsp,
+        Push TwacR.Rdi,
+        Push TwacR.R8,
+        LoadConst 1 TwacR.Rsi,
+        Call $ Label "calloc",
+        Pop TwacR.R8,
+        Pop TwacR.Rdi,
+        AddImmediate64 8 TwacR.Rsp,
+        Transfer TwacR.R8 TwacR.Rcx,
+        Transfer TwacR.Rdi TwacR.Rsi,
+        Transfer TwacR.Rax TwacR.Rdi,
+        Push TwacR.Rax,
+        Call $ Label "memcpy",
+        Pop TwacR.Rax,
+        Return
+      ],
+      []
     )

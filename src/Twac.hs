@@ -54,7 +54,7 @@ data TwacStatement v
   | Assign v v
   | Copy v v
   | TwacCase v (Map.Map Type Label)
-  | Abort Int String
+  | Abort Int Trac.AbortReason
   | TwacInternal InputIr.Internal
 
 data TwacIr v = TwacIr
@@ -98,7 +98,7 @@ instance (Show v) => Show (TwacStatement v) where
           Copy src dst -> "copy " ++ show src ++ " " ++ show dst
           -- TODO: this is incomplete
           TwacCase var _ -> "case " ++ show var
-          Abort line str -> "abort " ++ show line ++ ": " ++ str
+          Abort line reason -> "abort " ++ show line ++ ": " ++ show reason
           TwacInternal internal -> "internal: " ++ show internal
 
 showTwac twac = unlines (map show twac)
@@ -137,7 +137,7 @@ generateTwacStatement tracStatement = case tracStatement of
   Trac.Assign dst src -> pure [Assign src dst]
   Trac.Case resultVariable caseVariable jumpTable -> pure [TwacCase caseVariable jumpTable]
   Trac.TracInternal internal -> pure [TwacInternal internal]
-  Trac.Abort line str -> pure [Abort line str]
+  Trac.Abort line reason -> pure [Abort line reason]
 
 -- I cannot tell if this is the most beautiful or the most ugly code I have
 -- written. I think I am leaning towards the most ugly. This is hyperbole of

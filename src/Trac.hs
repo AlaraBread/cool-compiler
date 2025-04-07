@@ -62,7 +62,15 @@ data TracStatement
     -- dst, src, jumptable
     Case Variable Variable (Map.Map InputIr.Type Label)
   | TracInternal InputIr.Internal
-  | Abort Int String
+  | Abort Int AbortReason
+
+data AbortReason
+  = DispatchOnVoid
+  | CaseOnVoid
+  | CaseNoMatch
+  | DivisionByZero
+  | SubstringOutOfRange
+  deriving (Show)
 
 instance Show TracStatement where
   show t = case t of
@@ -96,7 +104,7 @@ instance Show TracStatement where
     Assign a b -> show a ++ " <- " ++ show b
     Case dst src labels -> show dst ++ " <- case " ++ show src ++ " " ++ show labels
     TracInternal internal -> "internal: " ++ show internal
-    Abort line message -> "abort " ++ show line ++ " " ++ message
+    Abort line reason -> "abort " ++ show line ++ " " ++ show reason
 
 showBinary :: Variable -> Variable -> Variable -> String -> String
 showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c
@@ -375,14 +383,14 @@ generateTracExpr
             let trac = concatMap (\(_, _, t) -> t) elements'
 
             abortLabel <- getLabel
-            let abortCode = map lined' [TracLabel abortLabel, Abort line_number "case without matching branch"]
+            let abortCode = map lined' [TracLabel abortLabel, Abort line_number CaseNoMatch]
 
             let typeToParentMap = pickLowestParents (Map.keys caseTypeToLabelMap)
             let typeToLabel (Just p) = caseTypeToLabelMap Map.! p
                 typeToLabel Nothing = abortLabel
             let typeToLabelMap = Map.map typeToLabel typeToParentMap
 
-            pure $
+            pure
               ( caseVariableTrac
                   ++ [lined' $ Case resultVariable caseVariable typeToLabelMap]
                   ++ trac

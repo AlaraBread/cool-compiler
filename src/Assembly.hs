@@ -10,6 +10,7 @@ import Distribution.Compat.CharParsing (CharParsing (string))
 import InputIr (ImplementationMapEntry)
 import qualified InputIr
 import Trac (Label (..), Temporary (Temporary), TracStatement (dispatchReceiverType), TypeDetails (TypeDetails, methodTags, typeSize), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getLabel, getVariable)
+import qualified Trac
 import qualified Twac
 import TwacR (TwacRStatement (TwacRStatement), showByte)
 import qualified TwacR
@@ -115,6 +116,7 @@ instance Show AssemblyStatement where
           JumpAddress addr -> indent $ "jmp *" ++ show addr
           Comment string -> indent $ "## " ++ string
 
+-- TODO: reuse string constants if they are already past
 data AssemblyData
   = JumpTable Label [Label]
   | StringConstant Label String
@@ -172,6 +174,7 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
               inString typeDetailsMap,
               pushString,
               abort,
+              errorMessages,
               do
                 let methodList =
                       fmap
@@ -526,19 +529,22 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                     JumpAddress (Address Nothing r1 Nothing Nothing)
                   ]
             pure (code, [JumpTable jumpTableLabel (Map.elems jumpTable)])
-          Twac.Abort line string -> do
-            -- TODO: deduplicate identical error lines
-            messageLabel <- getLabel
-            let message = "Error: %d: Exception: " ++ string ++ "\\n"
-            pure
-              ( [ LoadLabel messageLabel TwacR.Rdi,
-                  LoadConst line TwacR.Rsi,
-                  Call $ Label "printf",
-                  LoadConst 1 TwacR.Rdi,
-                  Call $ Label "exit"
-                ],
-                [RawStringConstant messageLabel message]
-              )
+          Twac.Abort line reason ->
+            let messageLabel = Label $ case reason of
+                  Trac.DispatchOnVoid -> "dispatch_on_void"
+                  Trac.CaseOnVoid -> "case_on_void"
+                  Trac.CaseNoMatch -> "case_no_match"
+                  Trac.DivisionByZero -> "division_by_zero"
+                  Trac.SubstringOutOfRange -> "substring_out_of_range"
+             in pure
+                  ( [ LoadLabel messageLabel TwacR.Rdi,
+                      LoadConst line TwacR.Rsi,
+                      Call $ Label "printf",
+                      LoadConst 1 TwacR.Rdi,
+                      Call $ Label "exit"
+                    ],
+                    []
+                  )
           -- TODO: replace commments with calls as we write the code
           Twac.TwacInternal internal ->
             let call function = pure $ instOnly [SubtractImmediate64 8 TwacR.Rsp, Call $ Label function, AddImmediate64 8 TwacR.Rsp, Return]
@@ -884,4 +890,15 @@ abort = do
         -- dont need to cleanup because we wont return from exit
       ],
       [StringConstant abortString "abort"]
+    )
+
+errorMessages =
+  pure
+    ( [],
+      [ RawStringConstant (Label "dispatch_on_void") "Error: %d: Exception: dispatch on void :<\\n",
+        RawStringConstant (Label "case_on_void") "Error: %d: Exception: case on void :<\\n",
+        RawStringConstant (Label "case_no_match") "Error: %d: Exception: no matching branch for case statement. it is all alone, in this lonely world :<\\n",
+        RawStringConstant (Label "division_by_zero") "Error: %d: Exception: division by zero. unfortunately, this is nonsense in ℤ₄₂₉₄₉₆₇₂₉₆ :<\\n",
+        RawStringConstant (Label "substring_out_of_range") "Error: %d: Exception: substring out of range :<\\n"
+      ]
     )

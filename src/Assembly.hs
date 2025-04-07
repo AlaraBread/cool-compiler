@@ -908,11 +908,11 @@ abort = do
 errorMessages =
   pure
     ( [],
-      [ RawStringConstant (Label "dispatch_on_void") "Error: %d: Exception: dispatch on void. stare into the void, and the void stares back :<\\n",
-        RawStringConstant (Label "case_on_void") "Error: %d: Exception: case on void. bark into the void, and the void barks back :<\\n",
-        RawStringConstant (Label "case_no_match") "Error: %d: Exception: no matching branch for case statement. it is all alone, in this lonely world :<\\n",
-        RawStringConstant (Label "division_by_zero") "Error: %d: Exception: division by zero. unfortunately, this is nonsense in ℤ₄₂₉₄₉₆₇₂₉₆ :<\\n",
-        RawStringConstant (Label "substring_out_of_range") "Error: %d: Exception: substring out of range :<\\n"
+      [ RawStringConstant (Label "dispatch_on_void") "ERROR: %d: Exception: dispatch on void. stare into the void, and the void stares back :<\\n",
+        RawStringConstant (Label "case_on_void") "ERROR: %d: Exception: case on void. bark at the void, and the void barks back :<\\n",
+        RawStringConstant (Label "case_no_match") "ERROR: %d: Exception: no matching branch for case statement. it is all alone, in this lonely world :<\\n",
+        RawStringConstant (Label "division_by_zero") "ERROR: %d: Exception: division by zero. unfortunately, this is nonsense in ℤ₄₂₉₄₉₆₇₂₉₆ :<\\n",
+        RawStringConstant (Label "substring_out_of_range") "ERROR: %d: Exception: substring out of range :<\\n"
       ]
     )
 

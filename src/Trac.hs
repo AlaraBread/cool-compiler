@@ -188,10 +188,19 @@ generateTracExpr
               let dispatchArgsTrac = concatMap fst dispatchArgs'
               let dispatchArgsV = map snd dispatchArgs'
               (receiverTrac, receiverV) <- generateTracExpr' receiver
+
+              isVoid <- getVariable
+              isNotVoid <- getVariable
+              isNotVoidLabel <- getLabel
               pure
                 ( dispatchArgsTrac
                     ++ receiverTrac
-                    ++ [ lined' $
+                    ++ [ lined' $ IsVoid isVoid receiverV,
+                         lined' $ Not isNotVoid isVoid,
+                         lined' $ ConditionalJump isNotVoid isNotVoidLabel,
+                         lined' $ Abort lineNumber DispatchOnVoid,
+                         lined' $ TracLabel isNotVoidLabel,
+                         lined' $
                            Dispatch
                              { dispatchResult = temp,
                                dispatchMethod = InputIr.lexeme method,
@@ -214,10 +223,19 @@ generateTracExpr
               let dispatchArgsTrac = concatMap fst dispatchArgs'
               let dispatchArgsV = map snd dispatchArgs'
               (receiverTrac, receiverV) <- generateTracExpr' receiver
+
+              isVoid <- getVariable
+              isNotVoid <- getVariable
+              isNotVoidLabel <- getLabel
               pure
                 ( dispatchArgsTrac
                     ++ receiverTrac
-                    ++ [ lined' $
+                    ++ [ lined' $ IsVoid isVoid receiverV,
+                         lined' $ Not isNotVoid isVoid,
+                         lined' $ ConditionalJump isNotVoid isNotVoidLabel,
+                         lined' $ Abort lineNumber DispatchOnVoid,
+                         lined' $ TracLabel isNotVoidLabel,
+                         lined' $
                            Dispatch
                              { dispatchResult = temp,
                                dispatchMethod = InputIr.lexeme method,

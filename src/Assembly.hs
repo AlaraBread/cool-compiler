@@ -29,6 +29,7 @@ data AssemblyStatement
   | Cdq
   | Cmp TwacR.Register TwacR.Register
   | Test TwacR.Register TwacR.Register
+  | Test64 TwacR.Register TwacR.Register
   | CmpConst Integer TwacR.Register
   | XorConst Integer TwacR.Register
   | Store TwacR.Register Address
@@ -85,6 +86,7 @@ instance Show AssemblyStatement where
           Cdq -> indent "cdq"
           Cmp src dst -> binary32 "cmpl" src dst
           Test src dst -> binary32 "testl" src dst
+          Test64 src dst -> binary "test" src dst
           CmpConst src dst -> binaryConst32 "cmpl" src dst
           XorConst src dst -> binaryConst "xorq" src dst
           Store src dst -> binary "movq" src dst
@@ -461,9 +463,8 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
             (new, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") dst
             nonVoidLabel <- getLabel
             endLabel <- getLabel
-            set <- setBool TwacR.Rax JumpNonZero
-            pure $ instOnly (new ++ set)
-          -- TODO: handle dispatch on void
+            set <- setBool dst JumpZero
+            pure $ instOnly ([Transfer dst rCallee1] ++ new ++ [Test64 rCallee1 rCallee1] ++ set)
           Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs ->
             case dispatchType of
               -- Static dispatch; this is easy! We like this.
@@ -496,15 +497,23 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
             pure $
               instOnly
                 [ Load (attributeAddress cond 0) r1,
-                  Test r1 r1,
+                  Test64 r1 r1,
                   JumpNonZero label
                 ]
           Twac.Assign src dst ->
             pure $ instOnly [Transfer src dst]
-          Twac.Copy src dst ->
+          Twac.Copy src dst -> do
+            isNotVoidLabel <- getLabel
+            endLabel <- getLabel
             pure $
               instOnly
                 [ Comment $ "begin copy " ++ show src ++ " " ++ show dst,
+                  -- if the src is void, we need to just copy the pointer
+                  Test64 src src,
+                  JumpNonZero isNotVoidLabel,
+                  Transfer src dst,
+                  Jump endLabel,
+                  AssemblyLabel isNotVoidLabel,
                   Transfer src rCallee1,
                   -- allocate memory
                   Load (attributeAddress src $ -3) TwacR.Rdi,
@@ -517,6 +526,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   Call $ Label "memcpy",
                   -- save ptr to memory to dst
                   Transfer rCallee2 dst,
+                  AssemblyLabel endLabel,
                   Comment $ "end copy " ++ show src ++ " " ++ show dst
                 ]
           Twac.TwacCase conditionVariable jumpTable -> do
@@ -898,8 +908,8 @@ abort = do
 errorMessages =
   pure
     ( [],
-      [ RawStringConstant (Label "dispatch_on_void") "Error: %d: Exception: dispatch on void :<\\n",
-        RawStringConstant (Label "case_on_void") "Error: %d: Exception: case on void :<\\n",
+      [ RawStringConstant (Label "dispatch_on_void") "Error: %d: Exception: dispatch on void. stare into the void, and the void stares back :<\\n",
+        RawStringConstant (Label "case_on_void") "Error: %d: Exception: case on void. bark into the void, and the void barks back :<\\n",
         RawStringConstant (Label "case_no_match") "Error: %d: Exception: no matching branch for case statement. it is all alone, in this lonely world :<\\n",
         RawStringConstant (Label "division_by_zero") "Error: %d: Exception: division by zero. unfortunately, this is nonsense in ℤ₄₂₉₄₉₆₇₂₉₆ :<\\n",
         RawStringConstant (Label "substring_out_of_range") "Error: %d: Exception: substring out of range :<\\n"

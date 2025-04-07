@@ -127,7 +127,7 @@ generateTwacStatement tracStatement = case tracStatement of
   Trac.Negate dst src -> pure $ generateUnaryStatement Negate dst src
   Trac.New dst type' -> pure [New type' dst]
   Trac.Default dst type' -> pure [Default type' dst]
-  Trac.IsVoid dst src -> pure $ generateUnaryStatement Not dst src
+  Trac.IsVoid dst src -> pure $ generateUnaryStatement IsVoid dst src
   Trac.Dispatch res rec recType t m as -> pure [Dispatch res rec recType t m as]
   Trac.Jump l -> pure [Jump l]
   Trac.TracLabel l -> pure [TwacLabel l]

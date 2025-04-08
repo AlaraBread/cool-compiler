@@ -920,7 +920,7 @@ concatString :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [Assembl
 concatString typeDetailsMap = do
   let registerParamCount = 2
       generateAssemblyStatements' = generateAssemblyStatements (InputIr.Type "") registerParamCount typeDetailsMap
-  (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.Rdi
+  (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.R8
   pure
     ( [ AssemblyLabel $ Label "concat",
         SubtractImmediate64 8 TwacR.Rsp,
@@ -928,16 +928,42 @@ concatString typeDetailsMap = do
         Push TwacR.Rsi
       ]
         ++ newString
-        ++ [ Call $ Label "copy",
+        ++ [ Pop TwacR.Rsi,
+             Pop TwacR.Rdi,
+             Push TwacR.Rdi,
+             Push TwacR.Rsi,
+             Push TwacR.R8,
+             Load (attributeAddress TwacR.Rsi 1) TwacR.Rsi,
+             Load (attributeAddress TwacR.Rdi 1) TwacR.Rdi,
+             Add TwacR.Rdi TwacR.Rsi,
+             Push TwacR.Rsi,
+             LoadConst 1 TwacR.Rdi,
+             Call $ Label "calloc",
+             Pop TwacR.Rdx,
+             Pop TwacR.R8,
              Pop TwacR.Rsi,
              Pop TwacR.Rdi,
-             Load (attributeAddress TwacR.Rsi 1) TwacR.R9,
-             Load (attributeAddress TwacR.Rdi 1) TwacR.Rcx,
-             Add TwacR.R9 TwacR.Rcx,
-             Load (attributeAddress TwacR.Rax 0) TwacR.Rdi,
-             Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
-             SubtractImmediate64 8 TwacR.Rsp,
+             Store TwacR.Rax (attributeAddress TwacR.R8 0), -- string
+             Store TwacR.Rdx (attributeAddress TwacR.R8 1), -- length
+             Store TwacR.Rdx (attributeAddress TwacR.R8 2), -- capacity
+             Push TwacR.Rsi,
+             Load (attributeAddress TwacR.Rdi 0) TwacR.Rsi, -- memcpy src
+             Load (attributeAddress TwacR.Rdi 1) TwacR.Rdx, -- memcpy length
+             Transfer TwacR.Rax TwacR.Rdi, -- memcpy dst
+             Push TwacR.R8,
              Push TwacR.Rax,
+             Push TwacR.Rdx,
+             Call $ Label "memcpy",
+             Pop TwacR.R9,
+             Pop TwacR.Rax,
+             Pop TwacR.R8,
+             Pop TwacR.Rsi,
+             Load (attributeAddress TwacR.Rsi 1) TwacR.Rdx, -- memcpy length
+             Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi, -- memcpy src
+             Transfer TwacR.Rax TwacR.Rdi, -- memcpy dst
+             Add TwacR.R9 TwacR.Rdi, -- add length of first string
+             SubtractImmediate64 8 TwacR.Rsp,
+             Push TwacR.R8,
              Call $ Label "memcpy",
              Pop TwacR.Rax,
              AddImmediate64 16 TwacR.Rsp,
@@ -953,15 +979,16 @@ objectCopy =
         SubtractImmediate64 8 TwacR.Rsp,
         Push TwacR.Rdi,
         Push TwacR.R8,
+        Transfer TwacR.R8 TwacR.Rdi,
         LoadConst 1 TwacR.Rsi,
         Call $ Label "calloc",
         Pop TwacR.R8,
         Pop TwacR.Rdi,
         AddImmediate64 8 TwacR.Rsp,
+        Push TwacR.Rax,
         Transfer TwacR.R8 TwacR.Rcx,
         Transfer TwacR.Rdi TwacR.Rsi,
         Transfer TwacR.Rax TwacR.Rdi,
-        Push TwacR.Rax,
         Call $ Label "memcpy",
         Pop TwacR.Rax,
         Return

@@ -93,7 +93,7 @@
 5.1 function parameters
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-  passed in rdi, rsi, rcx, r8, r9, then the stack
+  passed in rdi, rsi, rdx, rcx, r8, r9, then the stack
 
   note: we keep a pointer to self as the first parameter
 

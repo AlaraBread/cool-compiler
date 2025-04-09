@@ -170,14 +170,24 @@ generateTwacRStatements epilogue freeRegisters twac =
          in [ TwacRStatement $ op dstR,
               Store dstR dst
             ]
+
+      comparison :: (Register -> Register -> Register -> TwacStatement Register) -> Variable -> Variable -> Variable -> [TwacRStatement]
+      comparison op src1 src2 dst =
+        let (src1R, freeRegisters') = Set.deleteFindMin freeRegisters
+            (src2R, freeRegisters'') = Set.deleteFindMin freeRegisters'
+         in [ Load src1 src1R,
+              Load src2 src2R,
+              TwacRStatement $ op src1R src2R TwacR.Rax,
+              Store TwacR.Rax dst
+            ]
    in case twac of
         Add src dst -> binaryOperation Add src dst
         Subtract src dst -> binaryOperation Subtract src dst
         Multiply src dst -> binaryOperation Multiply src dst
         Divide src dst -> binaryOperation Divide src dst
-        LessThan src dst -> binaryOperation LessThan src dst
-        LessThanOrEqualTo src dst -> binaryOperation LessThanOrEqualTo src dst
-        Equals src dst -> binaryOperation Equals src dst
+        LessThan src1 src2 dst -> comparison LessThan src1 src2 dst
+        LessThanOrEqualTo src1 src2 dst -> comparison LessThanOrEqualTo src1 src2 dst
+        Equals src1 src2 dst -> comparison Equals src1 src2 dst
         IntConstant i v -> immediate (IntConstant i) v
         BoolConstant i v -> immediate (BoolConstant i) v
         StringConstant i v -> immediate (StringConstant i) v

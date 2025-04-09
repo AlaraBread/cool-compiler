@@ -27,9 +27,9 @@ data TwacStatement v
   | Subtract v v
   | Multiply v v
   | Divide v v
-  | LessThan v v
-  | LessThanOrEqualTo v v
-  | Equals v v
+  | LessThan v v v
+  | LessThanOrEqualTo v v v
+  | Equals v v v
   | IntConstant Int v
   | BoolConstant Bool v
   | StringConstant String v
@@ -76,9 +76,9 @@ instance (Show v) => Show (TwacStatement v) where
           Subtract src dst -> showBinary src dst "-"
           Multiply src dst -> showBinary src dst "*"
           Divide src dst -> showBinary src dst "/"
-          LessThan src dst -> showBinary src dst "<"
-          LessThanOrEqualTo src dst -> showBinary src dst "<="
-          Equals src dst -> showBinary src dst "="
+          LessThan src1 src2 dst -> show dst ++ " <- " ++ show src1 ++ " < " ++ show src2
+          LessThanOrEqualTo src1 src2 dst -> show dst ++ " <- " ++ show src1 ++ " <= " ++ show src2
+          Equals src1 src2 dst -> show dst ++ " <- " ++ show src1 ++ " <= " ++ show src2
           IntConstant i dst -> showImmediate i dst
           BoolConstant i dst -> showImmediate i dst
           StringConstant i dst -> showImmediate i dst
@@ -117,9 +117,9 @@ generateTwacStatement tracStatement = case tracStatement of
   Trac.Subtract dst src1 src2 -> pure $ generateBinaryStatement Subtract dst src1 src2
   Trac.Multiply dst src1 src2 -> pure $ generateBinaryStatement Multiply dst src1 src2
   Trac.Divide dst src1 src2 -> pure $ generateBinaryStatement Divide dst src1 src2
-  Trac.LessThan dst src1 src2 -> pure $ generateBinaryStatement LessThan dst src1 src2
-  Trac.LessThanOrEqualTo dst src1 src2 -> pure $ generateBinaryStatement LessThanOrEqualTo dst src1 src2
-  Trac.Equals dst src1 src2 -> pure $ generateBinaryStatement Equals dst src1 src2
+  Trac.LessThan dst src1 src2 -> pure [LessThan dst src1 src2]
+  Trac.LessThanOrEqualTo dst src1 src2 -> pure [LessThanOrEqualTo src1 src2 dst]
+  Trac.Equals dst src1 src2 -> pure [Equals src1 src2 dst]
   Trac.IntConstant var i -> pure [IntConstant i var]
   Trac.BoolConstant var i -> pure [BoolConstant i var]
   Trac.StringConstant var i -> pure [StringConstant i var]

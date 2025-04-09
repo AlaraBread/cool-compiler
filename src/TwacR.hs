@@ -249,6 +249,7 @@ generateTwacRStatements epilogue freeRegisters twac =
           let normalAbort message = [TwacRStatement $ Abort line message]
            in case message of
                 DispatchOnVoid -> normalAbort DispatchOnVoid
+                StaticDispatchOnVoid -> normalAbort StaticDispatchOnVoid
                 CaseOnVoid -> normalAbort CaseOnVoid
                 DivisionByZero -> normalAbort DivisionByZero
                 SubstringOutOfRange -> normalAbort SubstringOutOfRange

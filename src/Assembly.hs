@@ -591,6 +591,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
              in pure
                   ( case reason of
                       Trac.DispatchOnVoid -> normalAbort "dispatch_on_void"
+                      Trac.StaticDispatchOnVoid -> normalAbort "static_dispatch_on_void"
                       Trac.CaseOnVoid -> normalAbort "case_on_void"
                       Trac.CaseNoMatch typeName ->
                         [ LoadLabel (Label "case_no_match") TwacR.Rdi,
@@ -955,7 +956,9 @@ errorMessages =
   pure
     ( [],
       [ RawStringConstant (Label "dispatch_on_void") "ERROR: %d: Exception: dispatch on void\\n",
+        RawStringConstant (Label "static_dispatch_on_void") "ERROR: %d: Exception: static dispatch on void\\n",
         RawStringConstant (Label "case_on_void") "ERROR: %d: Exception: case on void\\n",
+        -- using %s here is fine because we will only ever call printf with an assembly string constant that gets a null terminator automatically
         RawStringConstant (Label "case_no_match") "ERROR: %d: Exception: case without matching branch: %s(...)\\n",
         RawStringConstant (Label "division_by_zero") "ERROR: %d: Exception: division by zero\\n",
         RawStringConstant (Label "substring_out_of_range") "ERROR: %d: Exception: String.substr out of range\\n"

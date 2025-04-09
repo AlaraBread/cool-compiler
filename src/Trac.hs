@@ -66,6 +66,7 @@ data TracStatement
 
 data AbortReason v
   = DispatchOnVoid
+  | StaticDispatchOnVoid
   | CaseOnVoid
   | CaseNoMatch v
   | DivisionByZero
@@ -233,7 +234,7 @@ generateTracExpr
                     ++ [ lined' $ IsVoid isVoid receiverV,
                          lined' $ Not isNotVoid isVoid,
                          lined' $ ConditionalJump isNotVoid isNotVoidLabel,
-                         lined' $ Abort lineNumber DispatchOnVoid,
+                         lined' $ Abort lineNumber StaticDispatchOnVoid,
                          lined' $ TracLabel isNotVoidLabel,
                          lined' $
                            Dispatch

@@ -66,6 +66,17 @@
    &attribute0
    &attribute1   
 
+4.3 string
+~~~~~~~~~~~~~~
+
+   string
+  ---------------
+   size (bytes)
+   type tag
+   ptr to vtable
+   &contents
+   length
+   capacity
 
 5 activation records
 ====================

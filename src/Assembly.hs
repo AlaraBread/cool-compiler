@@ -9,7 +9,7 @@ import Data.Maybe (mapMaybe, maybe)
 import Distribution.Compat.CharParsing (CharParsing (string))
 import InputIr (ImplementationMapEntry)
 import qualified InputIr
-import Trac (Label (..), Temporary (Temporary), TracStatement (dispatchReceiverType), TypeDetails (TypeDetails, methodTags, typeSize), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getLabel, getVariable)
+import Trac (Label (..), Temporary (Temporary), TracStatement (dispatchReceiverType), TypeDetails (TypeDetails, methodTags, typeSize, typeTag), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getLabel, getVariable)
 import qualified Trac
 import qualified Twac
 import TwacR (TwacRStatement (TwacRStatement), showByte)
@@ -121,7 +121,16 @@ instance Show AssemblyStatement where
 -- TODO: reuse string constants if they are already past
 data AssemblyData
   = JumpTable Label [Label]
-  | StringConstant Label String
+  | -- This is the same as the physical string layout
+    StringConstant
+      { stringConstantLabel :: Label,
+        stringConstantObjectSize :: Int,
+        stringConstantTypeTag :: Int,
+        stringConstantVTable :: Label,
+        stringConstantSize :: Int,
+        stringConstantCapacity :: Int,
+        stringConstant :: String
+      }
   | RawStringConstant Label String
   | VTable
       { vTableLabel :: Label,
@@ -133,7 +142,25 @@ instance Show AssemblyData where
   show data' = case data' of
     -- this is the exact same as VTables, lol
     JumpTable label entries -> show label ++ ":\n" ++ unlines (map ((++) "    .quad " . show) entries)
-    StringConstant label text -> show label ++ ": .string \"" ++ sanitizeString text ++ "\""
+    StringConstant
+      { stringConstantLabel,
+        stringConstantObjectSize,
+        stringConstantTypeTag,
+        stringConstantVTable,
+        stringConstantSize,
+        stringConstantCapacity,
+        stringConstant
+      } ->
+        let Label stringConstantLabelName = stringConstantLabel
+            contentsLabel = Label $ stringConstantLabelName ++ "_contents"
+         in (show stringConstantLabel ++ ":\n")
+              ++ ("    .quad " ++ show stringConstantObjectSize ++ "\n")
+              ++ ("    .quad " ++ show stringConstantTypeTag ++ "\n")
+              ++ ("    .quad " ++ show stringConstantVTable ++ "\n")
+              ++ ("    .quad " ++ show contentsLabel ++ "\n")
+              ++ ("    .quad " ++ show stringConstantSize ++ "\n")
+              ++ ("    .quad " ++ show stringConstantCapacity ++ "\n")
+              ++ (show contentsLabel ++ ": .string \"" ++ stringConstant ++ "\"")
     RawStringConstant label text -> show label ++ ": .string \"" ++ text ++ "\""
     -- this is directly taken from the reference compiler
     VTable label entries -> show label ++ ":\n" ++ unlines (map ((++) "    .quad " . show) entries)
@@ -378,17 +405,24 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
           Twac.BoolConstant b dst -> do
             (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") dst
             pure $ instOnly $ construction ++ [LoadConst (if b then 1 else 0) r1, Store r1 (attributeAddress dst 0)]
-          Twac.StringConstant s dst -> do
-            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "String") dst
-            stringLabel <- getLabel
+          Twac.StringConstant string dst -> do
+            let s = sanitizeString string
+            let stringLength = length string
+            let typeDetails = typeDetailsMap Map.! InputIr.Type "String"
+            stringConstantLabel <- getLabel
+
             pure
-              ( construction
-                  ++ [ LoadLabel stringLabel r1,
-                       Store r1 (attributeAddress dst 0),
-                       StoreConst (length s) (attributeAddress dst 1),
-                       StoreConst (length s) (attributeAddress dst 2)
-                     ],
-                [StringConstant stringLabel s]
+              ( [LoadLabel stringConstantLabel dst],
+                [ StringConstant
+                    { stringConstantLabel,
+                      stringConstantObjectSize = 8 * typeSize typeDetails,
+                      stringConstantTypeTag = typeTag typeDetails,
+                      stringConstantVTable = Label "String..vtable",
+                      stringConstantSize = stringLength,
+                      stringConstantCapacity = stringLength,
+                      stringConstant = s
+                    }
+                ]
               )
           Twac.Not dst ->
             pure $
@@ -678,7 +712,7 @@ inInt typeDetailsMap =
                Transfer TwacR.R14 TwacR.Rax,
                Return
              ],
-        [StringConstant formatLabel "%ld"]
+        [RawStringConstant formatLabel "%ld"]
       )
 
 outInt =
@@ -692,7 +726,7 @@ outInt =
           AddImmediate64 8 TwacR.Rsp,
           Return
         ],
-        [StringConstant formatLabel "%d"]
+        [RawStringConstant formatLabel "%d"]
       )
 
 outString = do
@@ -903,7 +937,7 @@ abort = do
         Call $ Label "exit"
         -- dont need to cleanup because we wont return from exit
       ],
-      [StringConstant abortString "abort"]
+      [RawStringConstant abortString "abort"]
     )
 
 errorMessages =

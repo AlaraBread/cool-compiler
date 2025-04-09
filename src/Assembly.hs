@@ -201,6 +201,8 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
             [ pure $ combineAssembly $ generateVTable typeDetailsMap <$> Map.toList implementationMap,
               main' typeDetailsMap,
               lessThanOrEqualTo typeDetailsMap,
+              equalTo typeDetailsMap,
+              lessThan typeDetailsMap,
               pure $ inInt typeDetailsMap,
               pure outInt,
               outString,
@@ -377,8 +379,14 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   Divide r1,
                   Store TwacR.Rax (attributeAddress dst 0)
                 ]
-          -- TODO: complete less than, equals
-          Twac.LessThan src1 src2 dst -> undefined
+          Twac.LessThan src1 src2 dst ->
+            pure $
+              instOnly
+                [ Transfer src1 TwacR.Rdi,
+                  Transfer src2 TwacR.Rsi,
+                  Call $ Label "less_than",
+                  Transfer TwacR.Rax dst
+                ]
           Twac.LessThanOrEqualTo src1 src2 dst ->
             pure $
               instOnly
@@ -387,7 +395,14 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   Call $ Label "less_than_equal",
                   Transfer TwacR.Rax dst
                 ]
-          Twac.Equals src1 src2 dst -> undefined
+          Twac.Equals src1 src2 dst ->
+            pure $
+              instOnly
+                [ Transfer src1 TwacR.Rdi,
+                  Transfer src2 TwacR.Rsi,
+                  Call $ Label "equal",
+                  Transfer TwacR.Rax dst
+                ]
           Twac.IntConstant i dst -> do
             (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Int") dst
             pure $ instOnly $ construction ++ [LoadConst i r1, Store r1 (attributeAddress dst 0)]
@@ -1217,6 +1232,202 @@ lessThanOrEqualTo typeDetailsMap = do
         ),
         boolConstruction,
         ( decisionBlock ++ boolIntCmp ++ strCmp ++ objCmp ++ trueBlock ++ falseBlock,
+          []
+        )
+      ]
+
+equalTo :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
+equalTo typeDetailsMap = do
+  boolConstruction <-
+    generateAssemblyStatements (InputIr.Type "") 1 typeDetailsMap $
+      TwacRStatement $
+        Twac.New (InputIr.Type "Bool") TwacR.R14
+
+  let exitBlock label value =
+        [ AssemblyLabel label,
+          StoreConst value (attributeAddress TwacR.R14 0),
+          Transfer TwacR.R14 TwacR.Rax,
+          AddImmediate64 8 TwacR.Rsp,
+          Return
+        ]
+  let trueLabel = Label "equal_true"
+  let trueBlock = exitBlock trueLabel 1
+  let falseLabel = Label "equal_false"
+  let falseBlock = exitBlock falseLabel 0
+
+  -- specific comparisons
+  let boolIntCmpLabel = Label "equal_bool_int_cmp"
+  let boolIntCmp =
+        [ AssemblyLabel boolIntCmpLabel,
+          Load (attributeAddress TwacR.Rdi 0) TwacR.R10,
+          Load (attributeAddress TwacR.Rsi 0) TwacR.R11,
+          Cmp TwacR.R11 TwacR.R10,
+          JumpZero trueLabel,
+          Jump falseLabel
+        ]
+
+  let strCmpLabel = Label "equal_str_cmp"
+  let bLongerLabel = Label "equal_str_cmp_b_longer"
+  let strCmp =
+        [ AssemblyLabel strCmpLabel,
+          Load (attributeAddress TwacR.Rdi 1) TwacR.R10,
+          Load (attributeAddress TwacR.Rsi 1) TwacR.R11,
+          Cmp TwacR.R10 TwacR.R11,
+          JumpNonZero falseLabel,
+          -- we know len(a) == len(b) here
+          Load (attributeAddress TwacR.Rdi 0) TwacR.Rdi,
+          Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
+          Transfer TwacR.R10 TwacR.Rdx,
+          Call $ Label "memcmp",
+          Test TwacR.Rax TwacR.Rax,
+          JumpZero trueLabel,
+          Jump falseLabel,
+          AssemblyLabel bLongerLabel
+        ]
+
+  let objCmpLabel = Label "equal_obj_cmp"
+  let objCmp =
+        [ AssemblyLabel objCmpLabel,
+          Cmp64 TwacR.Rdi TwacR.Rsi,
+          JumpZero trueLabel,
+          Jump falseLabel
+        ]
+
+  let getTypeTag typeName = toInteger $ typeTag $ typeDetailsMap Map.! InputIr.Type typeName
+
+  -- here we jump to the appropriate specific comparison blocks when relevant. We consider a <= b.
+  let decisionBlock =
+        [ Pop TwacR.Rsi,
+          Pop TwacR.Rdi,
+          -- is a void? if so, go directly to object compare
+          Test64 TwacR.Rsi TwacR.Rsi,
+          JumpZero objCmpLabel,
+          -- is b void? if so, since a is not void, this is false
+          Test64 TwacR.Rdi TwacR.Rdi,
+          JumpZero falseLabel,
+          -- is a an int?
+          Load (typeTagAddress TwacR.Rdi) TwacR.R10,
+          CmpConst (getTypeTag "Int") TwacR.R10,
+          JumpZero boolIntCmpLabel,
+          -- is a a bool?
+          CmpConst (getTypeTag "Bool") TwacR.R10,
+          JumpZero boolIntCmpLabel,
+          -- is a a string?
+          CmpConst (getTypeTag "String") TwacR.R10,
+          JumpZero strCmpLabel,
+          -- it has to be *some* object
+          Jump objCmpLabel
+        ]
+
+  pure $
+    combineAssembly
+      [ ( [ AssemblyLabel $ Label "equal",
+            SubtractImmediate64 8 TwacR.Rsp,
+            Push TwacR.Rdi,
+            Push TwacR.Rsi
+          ],
+          []
+        ),
+        boolConstruction,
+        ( decisionBlock ++ boolIntCmp ++ strCmp ++ objCmp ++ trueBlock ++ falseBlock,
+          []
+        )
+      ]
+
+lessThan :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
+lessThan typeDetailsMap = do
+  boolConstruction <-
+    generateAssemblyStatements (InputIr.Type "") 1 typeDetailsMap $
+      TwacRStatement $
+        Twac.New (InputIr.Type "Bool") TwacR.R14
+
+  let exitBlock label value =
+        [ AssemblyLabel label,
+          StoreConst value (attributeAddress TwacR.R14 0),
+          Transfer TwacR.R14 TwacR.Rax,
+          AddImmediate64 8 TwacR.Rsp,
+          Return
+        ]
+  let trueLabel = Label "less_than_true"
+  let trueBlock = exitBlock trueLabel 1
+  let falseLabel = Label "less_than_false"
+  let falseBlock = exitBlock falseLabel 0
+
+  -- specific comparisons
+  let boolIntCmpLabel = Label "less_than_bool_int_cmp"
+  let boolIntCmp =
+        [ AssemblyLabel boolIntCmpLabel,
+          Load (attributeAddress TwacR.Rdi 0) TwacR.R10,
+          Load (attributeAddress TwacR.Rsi 0) TwacR.R11,
+          Cmp TwacR.R11 TwacR.R10,
+          JumpLessThan trueLabel,
+          Jump falseLabel
+        ]
+
+  let strCmpLabel = Label "less_than_str_cmp"
+  let bLongerLabel = Label "less_than_str_cmp_b_longer"
+  let strCmp =
+        [ AssemblyLabel strCmpLabel,
+          Load (attributeAddress TwacR.Rdi 1) TwacR.R10,
+          Load (attributeAddress TwacR.Rsi 1) TwacR.R11,
+          Cmp TwacR.R10 TwacR.R11,
+          JumpGreaterThan bLongerLabel,
+          -- we know len(a) <= len(b) here
+          Load (attributeAddress TwacR.Rdi 0) TwacR.Rdi,
+          Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
+          Transfer TwacR.R10 TwacR.Rdx,
+          Call $ Label "memcmp",
+          Test TwacR.Rax TwacR.Rax,
+          JumpLessThan trueLabel,
+          Jump falseLabel,
+          AssemblyLabel bLongerLabel,
+          -- we know len(a) > len(b) here
+          Load (attributeAddress TwacR.Rdi 0) TwacR.Rdi,
+          Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
+          Transfer TwacR.R11 TwacR.Rdx,
+          Call $ Label "memcmp",
+          Test TwacR.Rax TwacR.Rax,
+          JumpLessThan trueLabel,
+          Jump falseLabel
+        ]
+
+  let getTypeTag typeName = toInteger $ typeTag $ typeDetailsMap Map.! InputIr.Type typeName
+
+  -- here we jump to the appropriate specific comparison blocks when relevant. We consider a <= b.
+  let decisionBlock =
+        [ Pop TwacR.Rsi,
+          Pop TwacR.Rdi,
+          -- is a void? if so, this is false
+          Test64 TwacR.Rsi TwacR.Rsi,
+          JumpZero falseLabel,
+          -- is b void? if so, this is false
+          Test64 TwacR.Rdi TwacR.Rdi,
+          JumpZero falseLabel,
+          -- is a an int?
+          Load (typeTagAddress TwacR.Rdi) TwacR.R10,
+          CmpConst (getTypeTag "Int") TwacR.R10,
+          JumpZero boolIntCmpLabel,
+          -- is a a bool?
+          CmpConst (getTypeTag "Bool") TwacR.R10,
+          JumpZero boolIntCmpLabel,
+          -- is a a string?
+          CmpConst (getTypeTag "String") TwacR.R10,
+          JumpZero strCmpLabel,
+          -- it has to be *some* object; objects cannot be less than each other
+          Jump falseLabel
+        ]
+
+  pure $
+    combineAssembly
+      [ ( [ AssemblyLabel $ Label "less_than",
+            SubtractImmediate64 8 TwacR.Rsp,
+            Push TwacR.Rdi,
+            Push TwacR.Rsi
+          ],
+          []
+        ),
+        boolConstruction,
+        ( decisionBlock ++ boolIntCmp ++ strCmp ++ trueBlock ++ falseBlock,
           []
         )
       ]

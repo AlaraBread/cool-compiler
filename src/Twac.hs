@@ -117,7 +117,7 @@ generateTwacStatement tracStatement = case tracStatement of
   Trac.Subtract dst src1 src2 -> pure $ generateBinaryStatement Subtract dst src1 src2
   Trac.Multiply dst src1 src2 -> pure $ generateBinaryStatement Multiply dst src1 src2
   Trac.Divide dst src1 src2 -> pure $ generateBinaryStatement Divide dst src1 src2
-  Trac.LessThan dst src1 src2 -> pure [LessThan dst src1 src2]
+  Trac.LessThan dst src1 src2 -> pure [LessThan src1 src2 dst]
   Trac.LessThanOrEqualTo dst src1 src2 -> pure [LessThanOrEqualTo src1 src2 dst]
   Trac.Equals dst src1 src2 -> pure [Equals src1 src2 dst]
   Trac.IntConstant var i -> pure [IntConstant i var]

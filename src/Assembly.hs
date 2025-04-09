@@ -121,6 +121,7 @@ instance Show AssemblyStatement where
 -- TODO: reuse string constants if they are already past
 data AssemblyData
   = JumpTable Label [Label]
+  | TypeNameTable Label [Label]
   | -- This is the same as the physical string layout
     StringConstant
       { stringConstantLabel :: Label,
@@ -142,6 +143,7 @@ instance Show AssemblyData where
   show data' = case data' of
     -- this is the exact same as VTables, lol
     JumpTable label entries -> show label ++ ":\n" ++ unlines (map ((++) "    .quad " . show) entries)
+    TypeNameTable label entries -> show label ++ ":\n" ++ unlines (map ((++) "    .quad " . show) entries)
     StringConstant
       { stringConstantLabel,
         stringConstantObjectSize,
@@ -205,6 +207,7 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
               concatString typeDetailsMap,
               stringLength typeDetailsMap,
               objectCopy,
+              typeName typeDetailsMap,
               abort,
               errorMessages,
               do
@@ -603,7 +606,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   InputIr.IOOutString -> call "out_string"
                   InputIr.ObjectAbort -> call "abort"
                   InputIr.ObjectCopy -> call "copy"
-                  InputIr.ObjectTypeName -> comment "type_name"
+                  InputIr.ObjectTypeName -> call "type_name"
                   InputIr.StringConcat -> call "concat"
                   InputIr.StringLength -> call "length"
                   InputIr.StringSubstr -> comment "substr"
@@ -1047,4 +1050,38 @@ objectCopy =
         Return
       ],
       []
+    )
+
+typeName :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
+typeName typeDetailsMap = do
+  let typeDetailsList = Map.toAscList typeDetailsMap
+
+  labels <- traverse (const getLabel) typeDetailsList
+
+  let stringConstants =
+        zipWith
+          ( \label (InputIr.Type typeName, typeDetails) ->
+              StringConstant
+                { stringConstantLabel = label,
+                  stringConstantObjectSize = 8 * typeSize typeDetails,
+                  stringConstantTypeTag = typeTag typeDetails,
+                  stringConstantVTable = Label "String..vtable",
+                  stringConstantSize = length typeName,
+                  stringConstantCapacity = length typeName,
+                  stringConstant = typeName
+                }
+          )
+          labels
+          typeDetailsList
+
+  let typeNameTable = Label "type_name_table"
+
+  pure
+    ( [ AssemblyLabel $ Label "type_name",
+        LoadLabel typeNameTable TwacR.R10,
+        Load (typeTagAddress TwacR.Rdi) TwacR.R11,
+        Load (Address Nothing TwacR.R10 (Just TwacR.R11) (Just 8)) TwacR.Rax,
+        Return
+      ],
+      TypeNameTable typeNameTable labels : stringConstants
     )

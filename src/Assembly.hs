@@ -949,7 +949,7 @@ errorMessages =
         RawStringConstant (Label "case_on_void") "ERROR: %d: Exception: case on void. bark at the void, and the void barks back :<\\n",
         RawStringConstant (Label "case_no_match") "ERROR: %d: Exception: no matching branch for case statement. it is all alone, in this lonely world :<\\n",
         RawStringConstant (Label "division_by_zero") "ERROR: %d: Exception: division by zero. unfortunately, this is nonsense in ℤ₄₂₉₄₉₆₇₂₉₆ :<\\n",
-        RawStringConstant (Label "substring_out_of_range") "ERROR: %d: Exception: substring out of range :<\\n"
+        RawStringConstant (Label "substring_out_of_range") "ERROR: %d: Exception: substring out of range (just like my long distance girlfriend (ohio)) :<\\n"
       ]
     )
 
@@ -1047,6 +1047,8 @@ stringSubstr typeDetailsMap = do
              Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi, -- start idx
              Load (attributeAddress TwacR.Rdi 1) TwacR.R9, -- total length of original string
              CmpConst 0 TwacR.Rsi,
+             JumpLessThan outOfRange,
+             CmpConst 0 TwacR.Rdx,
              JumpLessThan outOfRange,
              Transfer TwacR.Rdx TwacR.R8,
              Add TwacR.Rsi TwacR.R8, -- end idx

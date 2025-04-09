@@ -176,6 +176,7 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
               inString typeDetailsMap,
               pushString,
               concatString typeDetailsMap,
+              stringLength typeDetailsMap,
               objectCopy,
               abort,
               errorMessages,
@@ -570,7 +571,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   InputIr.ObjectCopy -> call "copy"
                   InputIr.ObjectTypeName -> comment "type_name"
                   InputIr.StringConcat -> call "concat"
-                  InputIr.StringLength -> comment "length"
+                  InputIr.StringLength -> call "length"
                   InputIr.StringSubstr -> comment "substr"
 
 -- Inspired by the reference compiler output, though there really is just about
@@ -967,6 +968,24 @@ concatString typeDetailsMap = do
              Call $ Label "memcpy",
              Pop TwacR.Rax,
              AddImmediate64 16 TwacR.Rsp,
+             Return
+           ],
+      []
+    )
+
+stringLength :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
+stringLength typeDetailsMap = do
+  let registerParamCount = 1
+      generateAssemblyStatements' = generateAssemblyStatements (InputIr.Type "") registerParamCount typeDetailsMap
+  (newInt, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "Int") TwacR.Rax
+  pure
+    ( [ AssemblyLabel $ Label "length",
+        Push TwacR.Rdi
+      ]
+        ++ newInt
+        ++ [ Pop TwacR.Rdi,
+             Load (attributeAddress TwacR.Rdi 1) TwacR.R8,
+             Store TwacR.R8 (attributeAddress TwacR.Rax 0),
              Return
            ],
       []

@@ -6,7 +6,7 @@ import Control.Exception (assert)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import InputIr (Formal, ImplementationMapEntry, Type (Type))
-import Trac (Label (Label), TypeDetailsMap, Variable (ParameterV))
+import Trac (AbortReason (..), Label (Label), TypeDetailsMap, Variable (ParameterV))
 import Twac
 import Util
 
@@ -245,7 +245,16 @@ generateTwacRStatements epilogue freeRegisters twac =
            in [ Load v vR,
                 TwacRStatement $ TwacCase vR jmpTable
               ]
-        Abort line message -> [TwacRStatement $ Abort line message]
+        Abort line message ->
+          let normalAbort message = [TwacRStatement $ Abort line message]
+           in case message of
+                DispatchOnVoid -> normalAbort DispatchOnVoid
+                CaseOnVoid -> normalAbort CaseOnVoid
+                DivisionByZero -> normalAbort DivisionByZero
+                SubstringOutOfRange -> normalAbort SubstringOutOfRange
+                CaseNoMatch v ->
+                  let (typeNameR, freeRegisters') = Set.deleteFindMin freeRegisters
+                   in [Load v typeNameR, TwacRStatement $ Abort line $ CaseNoMatch typeNameR]
         TwacInternal internal -> [TwacRStatement $ TwacInternal internal]
 
 generateTwacR :: TwacR -> TwacI -> TwacR

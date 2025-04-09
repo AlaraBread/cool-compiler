@@ -54,7 +54,7 @@ data TwacStatement v
   | Assign v v
   | Copy v v
   | TwacCase v (Map.Map Type Label)
-  | Abort Int Trac.AbortReason
+  | Abort Int (Trac.AbortReason v)
   | TwacInternal InputIr.Internal
 
 data TwacIr v = TwacIr

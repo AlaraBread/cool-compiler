@@ -581,19 +581,27 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   ]
             pure (code, [JumpTable jumpTableLabel (Map.elems jumpTable)])
           Twac.Abort line reason ->
-            let messageLabel = Label $ case reason of
-                  Trac.DispatchOnVoid -> "dispatch_on_void"
-                  Trac.CaseOnVoid -> "case_on_void"
-                  Trac.CaseNoMatch -> "case_no_match"
-                  Trac.DivisionByZero -> "division_by_zero"
-                  Trac.SubstringOutOfRange -> "substring_out_of_range"
+            let normalAbort messageName =
+                  [ LoadLabel (Label messageName) TwacR.Rdi,
+                    LoadConst line TwacR.Rsi,
+                    Call $ Label "printf",
+                    LoadConst 1 TwacR.Rdi,
+                    Call $ Label "exit"
+                  ]
              in pure
-                  ( [ LoadLabel messageLabel TwacR.Rdi,
-                      LoadConst line TwacR.Rsi,
-                      Call $ Label "printf",
-                      LoadConst 1 TwacR.Rdi,
-                      Call $ Label "exit"
-                    ],
+                  ( case reason of
+                      Trac.DispatchOnVoid -> normalAbort "dispatch_on_void"
+                      Trac.CaseOnVoid -> normalAbort "case_on_void"
+                      Trac.CaseNoMatch typeName ->
+                        [ LoadLabel (Label "case_no_match") TwacR.Rdi,
+                          LoadConst line TwacR.Rsi,
+                          Load (attributeAddress typeName 0) TwacR.Rdx,
+                          Call $ Label "printf",
+                          LoadConst 1 TwacR.Rdi,
+                          Call $ Label "exit"
+                        ]
+                      Trac.DivisionByZero -> normalAbort "division_by_zero"
+                      Trac.SubstringOutOfRange -> normalAbort "substring_out_of_range",
                     []
                   )
           -- TODO: replace commments with calls as we write the code
@@ -946,11 +954,11 @@ abort = do
 errorMessages =
   pure
     ( [],
-      [ RawStringConstant (Label "dispatch_on_void") "ERROR: %d: Exception: dispatch on void. stare into the void, and the void stares back :<\\n",
-        RawStringConstant (Label "case_on_void") "ERROR: %d: Exception: case on void. bark at the void, and the void barks back :<\\n",
-        RawStringConstant (Label "case_no_match") "ERROR: %d: Exception: no matching branch for case statement. it is all alone, in this lonely world :<\\n",
-        RawStringConstant (Label "division_by_zero") "ERROR: %d: Exception: division by zero. unfortunately, this is nonsense in ℤ₄₂₉₄₉₆₇₂₉₆ :<\\n",
-        RawStringConstant (Label "substring_out_of_range") "ERROR: %d: Exception: substring out of range (just like my long distance girlfriend (ohio)) :<\\n"
+      [ RawStringConstant (Label "dispatch_on_void") "ERROR: %d: Exception: dispatch on void\\n",
+        RawStringConstant (Label "case_on_void") "ERROR: %d: Exception: case on void\\n",
+        RawStringConstant (Label "case_no_match") "ERROR: %d: Exception: case without matching branch: %s(...)\\n",
+        RawStringConstant (Label "division_by_zero") "ERROR: %d: Exception: division by zero\\n",
+        RawStringConstant (Label "substring_out_of_range") "ERROR: %d: Exception: String.substr out of range\\n"
       ]
     )
 

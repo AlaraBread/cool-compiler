@@ -62,12 +62,12 @@ data TracStatement
     -- dst, src, jumptable
     Case Variable Variable (Map.Map InputIr.Type Label)
   | TracInternal InputIr.Internal
-  | Abort Int AbortReason
+  | Abort Int (AbortReason Variable)
 
-data AbortReason
+data AbortReason v
   = DispatchOnVoid
   | CaseOnVoid
-  | CaseNoMatch
+  | CaseNoMatch v
   | DivisionByZero
   | SubstringOutOfRange
   deriving (Show)
@@ -423,7 +423,21 @@ generateTracExpr
             let trac = concatMap (\(_, _, t) -> t) elements'
 
             abortLabel <- getLabel
-            let abortCode = map lined' [TracLabel abortLabel, Abort lineNumber CaseNoMatch]
+            typeName <- getVariable
+            let abortCode =
+                  map
+                    lined'
+                    [ TracLabel abortLabel,
+                      Dispatch
+                        { dispatchReceiver = caseVariable,
+                          dispatchArgs = [],
+                          dispatchMethod = "type_name",
+                          dispatchType = Nothing,
+                          dispatchReceiverType = InputIr.Type "Object",
+                          dispatchResult = typeName
+                        },
+                      Abort lineNumber $ CaseNoMatch typeName
+                    ]
 
             let typeToParentMap = pickLowestParents (Map.keys caseTypeToLabelMap)
             let typeToLabel (Just p) = caseTypeToLabelMap Map.! p

@@ -206,6 +206,7 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
               pushString,
               concatString typeDetailsMap,
               stringLength typeDetailsMap,
+              stringSubstr typeDetailsMap,
               objectCopy,
               typeName typeDetailsMap,
               abort,
@@ -609,7 +610,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   InputIr.ObjectTypeName -> call "type_name"
                   InputIr.StringConcat -> call "concat"
                   InputIr.StringLength -> call "length"
-                  InputIr.StringSubstr -> comment "substr"
+                  InputIr.StringSubstr -> call "substr"
 
 -- Inspired by the reference compiler output, though there really is just about
 -- one way to do this. Using calloc instead of malloc means we can save the
@@ -1024,6 +1025,48 @@ stringLength typeDetailsMap = do
              Load (attributeAddress TwacR.Rdi 1) TwacR.R8,
              Store TwacR.R8 (attributeAddress TwacR.Rax 0),
              Return
+           ],
+      []
+    )
+
+stringSubstr :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
+stringSubstr typeDetailsMap = do
+  let registerParamCount = 3
+      generateAssemblyStatements' = generateAssemblyStatements (InputIr.Type "") registerParamCount typeDetailsMap
+  (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.Rax
+  outOfRange <- getLabel
+  pure
+    ( [ AssemblyLabel $ Label "substr",
+        Push TwacR.Rdi,
+        Push TwacR.Rsi,
+        Push TwacR.Rdx
+      ]
+        ++ newString
+        ++ [ Pop TwacR.Rdx,
+             Pop TwacR.Rsi,
+             Pop TwacR.Rdi,
+             Load (attributeAddress TwacR.Rdx 0) TwacR.Rdx, -- length
+             Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi, -- start idx
+             Load (attributeAddress TwacR.Rdi 1) TwacR.R9, -- total length of original string
+             CmpConst 0 TwacR.Rsi,
+             JumpLessThan outOfRange,
+             Transfer TwacR.Rdx TwacR.R8,
+             Add TwacR.Rsi TwacR.R8, -- end idx
+             Cmp TwacR.R8 TwacR.R9,
+             JumpLessThan outOfRange,
+             --
+             Load (attributeAddress TwacR.Rdi 0) TwacR.Rcx,
+             Add TwacR.Rsi TwacR.Rcx,
+             Store TwacR.Rcx (attributeAddress TwacR.Rax 0), -- string ptr
+             Store TwacR.Rdx (attributeAddress TwacR.Rax 1), -- length
+             Store TwacR.Rdx (attributeAddress TwacR.Rax 2), -- capacity
+             Return,
+             AssemblyLabel outOfRange,
+             LoadLabel (Label "substring_out_of_range") TwacR.Rdi,
+             LoadConst 0 TwacR.Rsi,
+             SubtractImmediate64 8 TwacR.Rsp,
+             Call $ Label "printf",
+             Call $ Label "exit"
            ],
       []
     )

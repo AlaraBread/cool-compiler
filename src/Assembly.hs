@@ -59,7 +59,6 @@ data AssemblyStatement
   | JumpGreaterThanEqual Label
   | LoadLabel Label TwacR.Register
   | JumpAddress Address
-  | JumpRegister TwacR.Register
   | Comment String
 
 instance Show AssemblyStatement where
@@ -599,7 +598,6 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
           -- TODO: replace commments with calls as we write the code
           Twac.TwacInternal internal ->
             let call function = pure $ instOnly [SubtractImmediate64 8 TwacR.Rsp, Call $ Label function, AddImmediate64 8 TwacR.Rsp, Return]
-                comment function = pure $ instOnly [SubtractImmediate64 8 TwacR.Rsp, Comment function, AddImmediate64 8 TwacR.Rsp, Return]
              in case internal of
                   InputIr.IOInInt -> call "in_int"
                   InputIr.IOInString -> call "in_string"

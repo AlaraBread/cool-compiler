@@ -564,7 +564,7 @@ generateTracConstructor pickLowestParents classMap selfType = do
            idx
            ) -> case attrRhs of
             Just e -> do
-              (trac, v) <- generateTracExpr pickLowestParents classMap attributeMap selfType e
+              (trac, v) <- generateTracExpr pickLowestParents classMap bindingMap selfType e
               pure $ trac ++ [Lined line $ Assign (AttributeV idx) v]
             Nothing -> pure [Lined line $ Default (AttributeV idx) attrType]
       )

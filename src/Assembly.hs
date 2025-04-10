@@ -1164,6 +1164,11 @@ lessThanOrEqualTo typeDetailsMap = do
   let boolIntCmpLabel = Label "less_than_equal_bool_int_cmp"
   let boolIntCmp =
         [ AssemblyLabel boolIntCmpLabel,
+          -- do they both have the same type tag?
+          Load (typeTagAddress TwacR.Rsi) TwacR.R11,
+          Cmp TwacR.R10 TwacR.R11,
+          JumpNonZero falseLabel,
+          -- they do
           Load (attributeAddress TwacR.Rdi 0) TwacR.R10,
           Load (attributeAddress TwacR.Rsi 0) TwacR.R11,
           Cmp TwacR.R11 TwacR.R10,
@@ -1175,6 +1180,11 @@ lessThanOrEqualTo typeDetailsMap = do
   let bLongerLabel = Label "less_than_equal_str_cmp_b_longer"
   let strCmp =
         [ AssemblyLabel strCmpLabel,
+          -- do they both have the same type tag?
+          Load (typeTagAddress TwacR.Rsi) TwacR.R11,
+          Cmp TwacR.R10 TwacR.R11,
+          JumpNonZero falseLabel,
+          -- they do
           Load (attributeAddress TwacR.Rdi 1) TwacR.R10,
           Load (attributeAddress TwacR.Rsi 1) TwacR.R11,
           Cmp TwacR.R10 TwacR.R11,
@@ -1270,6 +1280,11 @@ equalTo typeDetailsMap = do
   let boolIntCmpLabel = Label "equal_bool_int_cmp"
   let boolIntCmp =
         [ AssemblyLabel boolIntCmpLabel,
+          -- do they both have the same type tag?
+          Load (typeTagAddress TwacR.Rsi) TwacR.R11,
+          Cmp TwacR.R10 TwacR.R11,
+          JumpNonZero falseLabel,
+          -- they do
           Load (attributeAddress TwacR.Rdi 0) TwacR.R10,
           Load (attributeAddress TwacR.Rsi 0) TwacR.R11,
           Cmp TwacR.R11 TwacR.R10,
@@ -1281,6 +1296,11 @@ equalTo typeDetailsMap = do
   let bLongerLabel = Label "equal_str_cmp_b_longer"
   let strCmp =
         [ AssemblyLabel strCmpLabel,
+          -- do they both have the same type tag?
+          Load (typeTagAddress TwacR.Rsi) TwacR.R11,
+          Cmp TwacR.R10 TwacR.R11,
+          JumpNonZero falseLabel,
+          -- they do
           Load (attributeAddress TwacR.Rdi 1) TwacR.R10,
           Load (attributeAddress TwacR.Rsi 1) TwacR.R11,
           Cmp TwacR.R10 TwacR.R11,
@@ -1368,6 +1388,11 @@ lessThan typeDetailsMap = do
   let boolIntCmpLabel = Label "less_than_bool_int_cmp"
   let boolIntCmp =
         [ AssemblyLabel boolIntCmpLabel,
+          -- do they both have the same type tag?
+          Load (typeTagAddress TwacR.Rsi) TwacR.R11,
+          Cmp TwacR.R10 TwacR.R11,
+          JumpNonZero falseLabel,
+          -- they do
           Load (attributeAddress TwacR.Rdi 0) TwacR.R10,
           Load (attributeAddress TwacR.Rsi 0) TwacR.R11,
           Cmp TwacR.R11 TwacR.R10,
@@ -1379,6 +1404,11 @@ lessThan typeDetailsMap = do
   let bLongerLabel = Label "less_than_str_cmp_b_longer"
   let strCmp =
         [ AssemblyLabel strCmpLabel,
+          -- do they both have the same type tag?
+          Load (typeTagAddress TwacR.Rsi) TwacR.R11,
+          Cmp TwacR.R10 TwacR.R11,
+          JumpNonZero falseLabel,
+          -- they do
           Load (attributeAddress TwacR.Rdi 1) TwacR.R10,
           Load (attributeAddress TwacR.Rsi 1) TwacR.R11,
           Cmp TwacR.R10 TwacR.R11,

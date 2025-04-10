@@ -35,5 +35,29 @@ class Main inherits IO {
     p(v = self);
     p(self = v);
     p(self = self);
+
+    out_string("\nevil with ints:\n");
+    let x: Object <- 1, y: Object <- 2 in p(x = y);
+    let x: Object <- 2, y: Object <- 1 in p(x = y);
+    let x: Object <- 1, y: Object <- self in p(x = y);
+    let x: Object <- self, y: Object <- 1 in p(x = y);
+
+    out_string("\nevil with bools:\n");
+    let x: Object <- false, y: Object <- true in p(x = y);
+    let x: Object <- true, y: Object <- false in p(x = y);
+    let x: Object <- true, y: Object <- self in p(x = y);
+    let x: Object <- self, y: Object <- true in p(x = y);
+
+    out_string("\nevil with strings:\n");
+    let x: Object <- "foo", y: Object <- "foobar" in p(x = y);
+    let x: Object <- "foobar", y: Object <- "foo" in p(x = y);
+    let x: Object <- "arf", y: Object <- self in p(x = y);
+    let x: Object <- self, y: Object <- "arf" in p(x = y);
+
+    out_string("\nevil with bools and ints:\n");
+    let x: Object <- 0, y: Object <- true in p(x = y);
+    let x: Object <- true, y: Object <- 0 in p(x = y);
+    let x: Object <- false, y: Object <- 1 in p(x = y);
+    let x: Object <- 1, y: Object <- false in p(x = y);
   }};
 };

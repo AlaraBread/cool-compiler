@@ -3,11 +3,13 @@
 module Main where
 
 import Assembly
+import Control.Monad (unless, when)
+import Data.List (isSuffixOf)
 import Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import InputIr
 import InputIrParser
-import System.Directory.Internal.Prelude (getArgs, when)
+import System.Directory.Internal.Prelude (getArgs)
 import Trac
 import Twac
 import TwacR
@@ -26,6 +28,7 @@ main :: IO ()
 main = do
   args <- getArgs
   let inputFile = head args
+  unless (".cl-type" `isSuffixOf` inputFile) $ error "Input file must end in .cl-type."
   let debug = (length args > 3) && (args !! 1 == "--debug")
 
   let targetClass = args !! 2

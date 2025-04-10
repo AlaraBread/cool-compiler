@@ -730,12 +730,12 @@ inInt typeDetailsMap =
 outInt =
   let formatLabel = Label "out_int_format"
    in ( [ AssemblyLabel $ Label "out_int",
+          Push TwacR.Rdi,
           LoadLabel formatLabel TwacR.Rdi,
           Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi,
           -- keep the stack 16-byte aligned
-          SubtractImmediate64 8 TwacR.Rsp,
           Call $ Label "printf",
-          AddImmediate64 8 TwacR.Rsp,
+          Pop TwacR.Rax,
           Return
         ],
         [RawStringConstant formatLabel "%d"]
@@ -751,6 +751,7 @@ outString = do
   end <- getLabel
   pure
     ( [ AssemblyLabel $ Label "out_string",
+        Push TwacR.Rdi,
         Load (attributeAddress TwacR.Rsi 0) TwacR.R8,
         Load (attributeAddress TwacR.Rsi 1) TwacR.Rcx,
         CmpConst 0 TwacR.Rcx,
@@ -785,10 +786,8 @@ outString = do
         Push TwacR.Rdi,
         Push TwacR.Rsi,
         Push TwacR.Rdx,
-        Push TwacR.R8,
         LoadConst (ord '\\') TwacR.Rdi,
         Call $ Label "putchar",
-        Pop TwacR.R8,
         Pop TwacR.Rdx,
         Pop TwacR.Rsi,
         Pop TwacR.Rdi,
@@ -804,9 +803,7 @@ outString = do
         Push TwacR.Rdi,
         Push TwacR.Rsi,
         Push TwacR.Rdx,
-        Push TwacR.R8,
         Call $ Label "putchar",
-        Pop TwacR.R8,
         Pop TwacR.Rdx,
         Pop TwacR.Rsi,
         Pop TwacR.Rdi,
@@ -818,11 +815,10 @@ outString = do
         CmpConst 0 TwacR.Rsi,
         JumpZero end,
         -- ended the loop with a backslash buffered, need to output it
-        Push TwacR.R8, -- just need to push something for parity here
         LoadConst (ord '\\') TwacR.Rdi,
         Call $ Label "putchar",
-        Pop TwacR.R8,
         AssemblyLabel end,
+        Pop TwacR.Rax,
         Return
       ],
       []

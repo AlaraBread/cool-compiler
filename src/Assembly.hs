@@ -1090,22 +1090,21 @@ stringSubstr typeDetailsMap = do
 objectCopy =
   pure
     ( [ AssemblyLabel $ Label "copy",
-        Load (sizeAddress TwacR.Rdi) TwacR.R8,
         SubtractImmediate64 8 TwacR.Rsp,
-        Push TwacR.Rdi,
-        Push TwacR.R8,
-        Transfer TwacR.R8 TwacR.Rdi,
-        LoadConst 1 TwacR.Rsi,
-        Call $ Label "calloc",
-        Pop TwacR.R8,
-        Pop TwacR.Rdi,
-        AddImmediate64 8 TwacR.Rsp,
-        Push TwacR.Rax,
-        Transfer TwacR.R8 TwacR.Rcx,
-        Transfer TwacR.Rdi TwacR.Rsi,
+        -- %r12 stores the original object
+        Transfer TwacR.Rdi TwacR.R12,
+        -- %r13 stores size
+        Load (sizeAddress TwacR.Rdi) TwacR.R13,
+        Transfer TwacR.R13 TwacR.Rdi,
+        Call $ Label "malloc",
+        -- %r14 stores the new object
+        Transfer TwacR.Rax TwacR.R14,
         Transfer TwacR.Rax TwacR.Rdi,
+        Transfer TwacR.R12 TwacR.Rsi,
+        Transfer TwacR.R13 TwacR.Rdx,
         Call $ Label "memcpy",
-        Pop TwacR.Rax,
+        Transfer TwacR.R14 TwacR.Rax,
+        AddImmediate64 8 TwacR.Rsp,
         Return
       ],
       []

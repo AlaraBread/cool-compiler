@@ -656,6 +656,8 @@ sanitizeString = concatMap sanitizeChar
 sanitizeChar :: Char -> [Char]
 sanitizeChar '\\' = "\\\\"
 sanitizeChar '\n' = "\\n"
+sanitizeChar '\t' = "\\t"
+sanitizeChar '"' = "\\\""
 sanitizeChar c = [c]
 
 -- haskell doesn't like circular dependencies 😭

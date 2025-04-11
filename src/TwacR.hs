@@ -210,14 +210,15 @@ generateTwacRStatements epilogue freeRegisters twac =
                 argsR = zipWith Load dispatchArgs' paramRegisters
                 memoryArgs = drop (length paramRegisters) dispatchArgs'
                 -- stack needs to be 16 byte aligned
-                memoryArgs' = if even $ length memoryArgs then memoryArgs else memoryArgs ++ [head memoryArgs]
-             in concatMap
-                  (\v -> [Load v Rdi, Push Rdi])
-                  (reverse memoryArgs')
+                alignSpace = if even $ length memoryArgs then 0 else 1
+             in [AllocateStackSpace alignSpace]
+                  ++ concatMap
+                    (\v -> [Load v Rdi, Push Rdi])
+                    (reverse memoryArgs)
                   ++ argsR
                   ++ [ TwacRStatement $ Dispatch Rax Rdi dispatchReceiverType dispatchType dispatchMethod (take (length dispatchArgs') paramRegisters),
                        Store Rax dispatchResult,
-                       DeallocateStackSpace (length memoryArgs')
+                       DeallocateStackSpace (length memoryArgs + alignSpace)
                      ]
         Jump label -> [TwacRStatement $ Jump label]
         TwacLabel label -> [TwacRStatement $ TwacLabel label]

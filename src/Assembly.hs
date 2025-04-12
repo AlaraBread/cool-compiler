@@ -838,6 +838,7 @@ inString :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyDat
 inString typeDetailsMap =
   do
     loop <- getLabel
+    error <- getLabel
     endLoop <- getLabel
     let registerParamCount = 2
         generateAssemblyStatements' = generateAssemblyStatements (InputIr.Type "") registerParamCount typeDetailsMap
@@ -858,6 +859,8 @@ inString typeDetailsMap =
                JumpZero endLoop,
                CmpConst (-1) TwacR.Rsi, -- eof
                JumpZero endLoop,
+               CmpConst 0 TwacR.Rsi, -- null byte
+               JumpZero error,
                Transfer TwacR.Rax TwacR.Rdi,
                Push TwacR.Rdi,
                Push TwacR.Rax,
@@ -865,6 +868,11 @@ inString typeDetailsMap =
                Pop TwacR.Rax,
                Pop TwacR.Rdi,
                Jump loop,
+               --
+               AssemblyLabel error,
+               StoreConst 0 $ attributeAddress TwacR.Rdi 0,
+               StoreConst 0 $ attributeAddress TwacR.Rdi 1,
+               StoreConst 0 $ attributeAddress TwacR.Rdi 2,
                --
                AssemblyLabel endLoop,
                AddImmediate64 8 TwacR.Rsp,

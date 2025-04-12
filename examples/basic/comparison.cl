@@ -4,7 +4,12 @@ class Main inherits IO {
 		let void: Main,
 		void2: Main,
 		m1: Main <- new Main,
-		m2: Main <- new Main in {
+		m2: Main <- new Main,
+		m3: Object <- new Main,
+		s1: Object <- "hey" in {
+			out_int(b(m1 <= m1));
+			out_int(b(m1 < m1));
+			out_int(b(m1 = m1));
 			out_int(b(m1 = m2));
 			out_int(b(m1 < m2));
 			out_int(b(m1 <= m2));
@@ -12,6 +17,11 @@ class Main inherits IO {
 			out_int(b(void <= void2));
 			out_int(b(void < void2));
 			out_int(b(void = void2));
+			out_int(b(m3 = s1));
+			out_int(b(m3 < s1));
+			out_int(b(m3 <= s1));
+			out_int(b(s1 < m3));
+			out_int(b(s1 <= m3));
 		}
 	};
 };

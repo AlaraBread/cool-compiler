@@ -14,7 +14,7 @@ set total_count 0
 set failed_count 0
 
 for file in $dir/**.cl
-    set test_file (path change-extension '' $file)
+    set test_file (echo $file | sed 's/\.cl$//')
     set base (basename $test_file)
 
     echo $test_file

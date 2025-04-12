@@ -5,5 +5,6 @@ class Main inherits IO {
 		out_string("\n\n");
 		out_string("abcdefg".substr(8, ~1));
 		out_string("\n");
+		out_string(new String);
 	}};
 };

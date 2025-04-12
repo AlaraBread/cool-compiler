@@ -207,7 +207,7 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
               lessThan typeDetailsMap,
               pure $ inInt typeDetailsMap,
               pure outInt,
-              outString,
+              pure outString,
               inString typeDetailsMap,
               pushString,
               concatString typeDetailsMap,
@@ -745,96 +745,96 @@ outInt =
         [RawStringConstant formatLabel "%d"]
       )
 
-outString = do
-  loop <- getLabel
-  nonBackslash <- getLabel
-  notEscapeSequence <- getLabel
-  notPrevBackslash <- getLabel
-  nonNewline <- getLabel
-  afterCall <- getLabel
-  end <- getLabel
-  pure
-    ( [ AssemblyLabel $ Label "out_string",
-        Push TwacR.Rdi,
-        Load (attributeAddress TwacR.Rsi 0) TwacR.R8,
-        Load (attributeAddress TwacR.Rsi 1) TwacR.Rcx,
-        CmpConst 0 TwacR.Rcx,
-        JumpZero end,
-        CmpConst 0 TwacR.R8,
-        JumpZero end,
-        LoadConst 0 TwacR.Rsi, -- keep track of backslashes
-        LoadConst 0 TwacR.Rdx, -- loop counter
-        AssemblyLabel loop,
-        LoadConst 0 TwacR.Rdi,
-        LoadByte (Address Nothing TwacR.R8 (Just TwacR.Rdx) (Just 1)) TwacR.Rdi,
-        CmpConst 0 TwacR.Rsi,
-        JumpZero notPrevBackslash,
-        -- previous character was a backslash
-        LoadConst 0 TwacR.Rsi, -- reset flag
-        CmpConst (toInteger $ ord 'n') TwacR.Rdi,
-        JumpNonZero nonNewline,
-        -- prev was a backslash and current is a 'n'
-        LoadConst (ord '\n') TwacR.Rdi,
-        Jump nonBackslash,
-        AssemblyLabel nonNewline,
-        -- prev character was a backslash but cur isnt 'n'
-        CmpConst (toInteger $ ord 't') TwacR.Rdi,
-        JumpNonZero notEscapeSequence,
-        -- prev character was backslash and cur is 't'
-        LoadConst (ord '\t') TwacR.Rdi,
-        Jump nonBackslash,
-        AssemblyLabel notEscapeSequence,
-        -- prev was backslash, current char isnt an escape sequence
-        -- need to output an extra backslash
-        Push TwacR.Rcx,
-        Push TwacR.Rdi,
-        Push TwacR.Rsi,
-        Push TwacR.Rdx,
-        Push TwacR.R8,
-        SubtractImmediate64 8 TwacR.Rsp,
-        LoadConst (ord '\\') TwacR.Rdi,
-        AddImmediate64 8 TwacR.Rsp,
-        Pop TwacR.R8,
-        Call $ Label "putchar",
-        Pop TwacR.Rdx,
-        Pop TwacR.Rsi,
-        Pop TwacR.Rdi,
-        Pop TwacR.Rcx,
-        AssemblyLabel notPrevBackslash,
-        CmpConst (toInteger $ ord '\\') TwacR.Rdi,
-        JumpNonZero nonBackslash,
-        -- cur character is backslash
-        LoadConst 1 TwacR.Rsi,
-        Jump afterCall,
-        AssemblyLabel nonBackslash,
-        Push TwacR.Rcx,
-        Push TwacR.Rdi,
-        Push TwacR.Rsi,
-        Push TwacR.Rdx,
-        Push TwacR.R8,
-        SubtractImmediate64 8 TwacR.Rsp,
-        Call $ Label "putchar",
-        AddImmediate64 8 TwacR.Rsp,
-        Pop TwacR.R8,
-        Pop TwacR.Rdx,
-        Pop TwacR.Rsi,
-        Pop TwacR.Rdi,
-        Pop TwacR.Rcx,
-        AssemblyLabel afterCall,
-        AddImmediate 1 TwacR.Rdx,
-        Cmp TwacR.Rcx TwacR.Rdx,
-        JumpLessThan loop,
-        CmpConst 0 TwacR.Rsi,
-        JumpZero end,
-        -- ended the loop with a backslash buffered, need to output it
-        LoadConst (ord '\\') TwacR.Rdi,
-        Call $ Label "putchar",
-        AssemblyLabel end,
-        Pop TwacR.Rax,
-        Return
-      ],
-      []
-    )
+-- see out-string-state-machine.svg
+outString =
+  let loop = Label "out_string_loop"
+      backslash = Label "out_string_backslash"
+      outChar = Label "out_string_out_char"
+      outNewline = Label "out_string_out_newline"
+      outTab = Label "out_string_out_tab"
+      outBackslashEnd = Label "out_string_out_bs_end"
+      outBackslashRepeat = Label "out_string_out_bs_repeat"
+      outBackslashChar = Label "out_string_out_bs_char"
+      end = Label "out_string_end"
+
+      clearRdi = LoadConst 0 TwacR.Rdi
+      loadChar = LoadByte (Address Nothing TwacR.R12 Nothing Nothing) TwacR.Rdi
+      incrementPtr = AddImmediate64 1 TwacR.R12
+      decrementLength = SubtractImmediate 1 TwacR.R13
+      putChar = Call $ Label "putchar"
+   in ( [ AssemblyLabel $ Label "out_string",
+          -- Store self so we can return it. This also aligns the stack.
+          Push TwacR.Rdi,
+          -- Clear Rdi.
+          -- R12 is the string pointer, R13 is the remaining length. Note that
+          -- we always increment the pointer in concert with decrementing the
+          -- length.
+          Load (attributeAddress TwacR.Rsi 0) TwacR.R12,
+          Load (attributeAddress TwacR.Rsi 1) TwacR.R13,
+          -- loop
+          AssemblyLabel loop,
+          Test64 TwacR.R13 TwacR.R13,
+          JumpZero end,
+          clearRdi,
+          loadChar,
+          incrementPtr,
+          decrementLength,
+          CmpConst (toInteger $ ord '\\') TwacR.Rdi,
+          JumpZero backslash,
+          -- out_char. we have intentional fallthrough here. The label is for
+          -- debugging purposes, we never actually jump to it.
+          AssemblyLabel outChar,
+          putChar,
+          Jump loop,
+          -- backslash.
+          AssemblyLabel backslash,
+          Test64 TwacR.R13 TwacR.R13,
+          JumpZero outBackslashEnd,
+          clearRdi,
+          loadChar,
+          incrementPtr,
+          decrementLength,
+          CmpConst (toInteger $ ord 'n') TwacR.Rdi,
+          JumpZero outNewline,
+          CmpConst (toInteger $ ord 't') TwacR.Rdi,
+          JumpZero outTab,
+          CmpConst (toInteger $ ord '\\') TwacR.Rdi,
+          JumpZero outBackslashRepeat,
+          -- out_bs_char. we have intentional fallthrough here. The label is for
+          -- debugging purposes, we never actually jump to it. we save the read char in %r14 while we are printing '\\'.
+          AssemblyLabel outBackslashChar,
+          Transfer TwacR.Rdi TwacR.R14,
+          LoadConst (ord '\\') TwacR.Rdi,
+          putChar,
+          Transfer TwacR.R14 TwacR.Rdi,
+          putChar,
+          Jump loop,
+          -- out_newline.
+          AssemblyLabel outNewline,
+          LoadConst (ord '\n') TwacR.Rdi,
+          putChar,
+          Jump loop,
+          -- out_tab.
+          AssemblyLabel outTab,
+          LoadConst (ord '\t') TwacR.Rdi,
+          putChar,
+          Jump loop,
+          -- out_bs_repeat.
+          AssemblyLabel outBackslashRepeat,
+          LoadConst (ord '\\') TwacR.Rdi,
+          putChar,
+          Jump backslash,
+          -- out_bs. Same idea with the fallthrough as out_char.
+          AssemblyLabel outBackslashEnd,
+          LoadConst (ord '\\') TwacR.Rdi,
+          putChar,
+          -- end. we exit. there is intentional fall through here
+          AssemblyLabel end,
+          Pop TwacR.Rax,
+          Return
+        ],
+        []
+      )
 
 inString :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 inString typeDetailsMap =

@@ -554,22 +554,38 @@ generateTracConstructor pickLowestParents classMap selfType = do
   let attrs = classMap Map.! selfType
   let attributeMap = generateAttributeMap attrs
   let bindingMap = Map.insert "self" (ParameterV 0) attributeMap
-  attrs' <-
-    traverse
-      ( \( InputIr.Attribute
-             { InputIr.attrName = InputIr.Identifier {InputIr.lexeme, InputIr.line},
-               InputIr.attrType,
-               InputIr.attrRhs
-             },
-           idx
-           ) -> case attrRhs of
-            Just e -> do
-              (trac, v) <- generateTracExpr pickLowestParents classMap bindingMap selfType e
-              pure $ trac ++ [Lined line $ Assign (AttributeV idx) v]
-            Nothing -> pure [Lined line $ Default (AttributeV idx) attrType]
-      )
-      (zip attrs [0, 1 ..])
-  pure $ concat attrs'
+  let attrs' = zip attrs [0 ..]
+
+  let defaultInitialize =
+        concatMap
+          ( \( InputIr.Attribute
+                 { InputIr.attrName = InputIr.Identifier {InputIr.lexeme, InputIr.line},
+                   InputIr.attrType,
+                   InputIr.attrRhs
+                 },
+               idx
+               ) -> [Lined line $ Default (AttributeV idx) attrType]
+          )
+          attrs'
+
+  initialize <-
+    concat
+      <$> traverse
+        ( \( InputIr.Attribute
+               { InputIr.attrName = InputIr.Identifier {InputIr.lexeme, InputIr.line},
+                 InputIr.attrType,
+                 InputIr.attrRhs
+               },
+             idx
+             ) -> case attrRhs of
+              Just e -> do
+                (trac, v) <- generateTracExpr pickLowestParents classMap bindingMap selfType e
+                pure $ trac ++ [Lined line $ Assign (AttributeV idx) v]
+              Nothing -> pure []
+        )
+        attrs'
+
+  pure $ defaultInitialize ++ initialize
 
 generateTrac ::
   ([InputIr.Type] -> Map.Map InputIr.Type (Maybe InputIr.Type)) ->

@@ -31,20 +31,20 @@ for file in $dir/**.cl
             cat "$input_file" | cool "$test_file.cl" >test-out/"$base"-"$input_base"-reference.txt
             cat "$input_file" | ./a.out >test-out/"$base"-"$input_base"-ours.txt
             if not diff test-out/"$base"-"$input_base"-reference.txt test-out/"$base"-"$input_base"-ours.txt
-                set failed_count $(math $failed_count + 1)
+                set failed_count (math $failed_count + 1)
                 echo "$test_file" "$input_base" >>failed_tests.txt
             end
-            set total_count $(math $total_count + 1)
+            set total_count (math $total_count + 1)
         end
     else
         echo no input
         cool "$test_file.cl" >test-out/"$base"-reference.txt
         ./a.out >test-out/"$base"-ours.txt
         if not diff test-out/"$base"-reference.txt test-out/"$base"-ours.txt
-            set failed_count $(math $failed_count + 1)
+            set failed_count (math $failed_count + 1)
             echo "$test_file" >>failed_tests.txt
         end
-        set total_count $(math $total_count + 1)
+        set total_count (math $total_count + 1)
     end
 
     rm "$test_file.cl-type"

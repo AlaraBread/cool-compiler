@@ -1,7 +1,7 @@
 #!/usr/bin/env fish
 
 cd src
-ghc Main.hs -prof -fprof-auto -outputdir ../build -o ../build/Main
+ghc Main.hs -outputdir ../build -o ../build/Main
 cd ..
 
 set dir examples/

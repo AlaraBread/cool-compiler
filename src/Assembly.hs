@@ -18,6 +18,7 @@ import Util
 
 data AssemblyStatement
   = Add TwacR.Register TwacR.Register
+  | Add64 TwacR.Register TwacR.Register
   | AddImmediate Int TwacR.Register
   | AddImmediate64 Int TwacR.Register
   | Subtract TwacR.Register TwacR.Register
@@ -75,6 +76,7 @@ instance Show AssemblyStatement where
         binaryConst32 op src dst = indent $ op ++ " $" ++ show src ++ ", " ++ TwacR.show32 dst
      in case instruction of
           Add src dst -> binary32 "addl" src dst
+          Add64 src dst -> binary "addq" src dst
           AddImmediate src dst -> binaryConst32 "addl" src dst
           AddImmediate64 src dst -> binaryConst "addq" src dst
           Subtract src dst -> binary32 "subl" src dst
@@ -1024,7 +1026,7 @@ concatString typeDetailsMap = do
              Load (attributeAddress TwacR.Rsi 1) TwacR.Rdx, -- memcpy length
              Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi, -- memcpy src
              Transfer TwacR.Rax TwacR.Rdi, -- memcpy dst
-             Add TwacR.R9 TwacR.Rdi, -- add length of first string
+             Add64 TwacR.R9 TwacR.Rdi, -- add length of first string
              SubtractImmediate64 8 TwacR.Rsp,
              Push TwacR.R8,
              Call $ Label "memcpy",

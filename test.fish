@@ -1,7 +1,7 @@
 #!/usr/bin/env fish
 
 cd src
-ghc Main.hs -prof -fprof-auto -outputdir ../build
+ghc Main.hs -prof -fprof-auto -outputdir ../build -o ../build/Main
 cd ..
 
 set dir examples/
@@ -20,7 +20,7 @@ for file in $dir/**.cl
     echo $test_file
 
     cool --type "$test_file.cl"
-    src/Main "$test_file.cl-type"
+    build/Main "$test_file.cl-type"
     gcc -no-pie -static "$test_file.s" 2&>/dev/null
 
     set input_files {$test_file}*.input

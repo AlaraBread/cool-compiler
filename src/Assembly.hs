@@ -194,7 +194,14 @@ data AssemblyIr = AssemblyIr
   }
 
 instance Show AssemblyIr where
-  show (AssemblyIr code data') = unlines (map show data') ++ "\n\n" ++ unlines (map show code)
+  show (AssemblyIr code data') =
+    -- marks the stack as non-executable
+    ".section .note.GNU-stack, \"\", @progbits\n\n"
+      ++ ".section .data\n"
+      ++ unlines (map show data')
+      ++ "\n\n"
+      ++ ".section .text\n"
+      ++ unlines (map show code)
 
 generateAssembly :: Temporary -> TwacR.TwacRIr -> AssemblyIr
 generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.typeDetailsMap} =

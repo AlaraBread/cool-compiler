@@ -33,6 +33,7 @@ data AssemblyStatement
   | Test TwacR.Register TwacR.Register
   | Test64 TwacR.Register TwacR.Register
   | CmpConst Integer TwacR.Register
+  | CmpConst32 Integer TwacR.Register
   | XorConst Integer TwacR.Register
   | Store TwacR.Register Address
   | StoreByte TwacR.Register Address
@@ -90,7 +91,8 @@ instance Show AssemblyStatement where
           Cmp64 src dst -> binary "cmpq" src dst
           Test src dst -> binary32 "testl" src dst
           Test64 src dst -> binary "test" src dst
-          CmpConst src dst -> binaryConst32 "cmpl" src dst
+          CmpConst src dst -> binaryConst "cmpq" src dst
+          CmpConst32 src dst -> binaryConst32 "cmpl" src dst
           XorConst src dst -> binaryConst "xorq" src dst
           Store src dst -> binary "movq" src dst
           StoreByte src dst -> indent $ "mov " ++ showByte src ++ ", " ++ show dst
@@ -779,7 +781,7 @@ outString =
           loadChar,
           incrementPtr,
           decrementLength,
-          CmpConst (toInteger $ ord '\\') TwacR.Rdi,
+          CmpConst32 (toInteger $ ord '\\') TwacR.Rdi,
           JumpZero backslash,
           -- out_char. we have intentional fallthrough here. The label is for
           -- debugging purposes, we never actually jump to it.
@@ -794,11 +796,11 @@ outString =
           loadChar,
           incrementPtr,
           decrementLength,
-          CmpConst (toInteger $ ord 'n') TwacR.Rdi,
+          CmpConst32 (toInteger $ ord 'n') TwacR.Rdi,
           JumpZero outNewline,
-          CmpConst (toInteger $ ord 't') TwacR.Rdi,
+          CmpConst32 (toInteger $ ord 't') TwacR.Rdi,
           JumpZero outTab,
-          CmpConst (toInteger $ ord '\\') TwacR.Rdi,
+          CmpConst32 (toInteger $ ord '\\') TwacR.Rdi,
           JumpZero outBackslashRepeat,
           -- out_bs_char. we have intentional fallthrough here. The label is for
           -- debugging purposes, we never actually jump to it. we save the read char in %r14 while we are printing '\\'.
@@ -857,11 +859,11 @@ inString typeDetailsMap =
                Transfer TwacR.Rax TwacR.Rsi,
                Pop TwacR.Rax,
                Pop TwacR.Rdi,
-               CmpConst (toInteger $ ord '\n') TwacR.Rsi,
+               CmpConst32 (toInteger $ ord '\n') TwacR.Rsi,
                JumpZero endLoop,
-               CmpConst (-1) TwacR.Rsi, -- eof
+               CmpConst32 (-1) TwacR.Rsi, -- eof
                JumpZero endLoop,
-               CmpConst 0 TwacR.Rsi, -- null byte
+               CmpConst32 0 TwacR.Rsi, -- null byte
                JumpZero error,
                Transfer TwacR.Rax TwacR.Rdi,
                Push TwacR.Rdi,
@@ -894,7 +896,7 @@ pushString = do
     ( [ AssemblyLabel $ Label "push_string",
         Push TwacR.R10,
         Load (attributeAddress TwacR.Rdi 0) TwacR.R9, -- string pointer
-        CmpConst 0 TwacR.R9,
+        CmpConst32 0 TwacR.R9,
         JumpNonZero nonNull,
         -- string pointer is null, lets make an allocation for it
         Push TwacR.Rdi,
@@ -1074,9 +1076,9 @@ stringSubstr typeDetailsMap = do
              Load (attributeAddress TwacR.Rdx 0) TwacR.Rdx, -- length
              Load (attributeAddress TwacR.Rsi 0) TwacR.Rsi, -- start idx
              Load (attributeAddress TwacR.Rdi 1) TwacR.R9, -- total length of original string
-             CmpConst 0 TwacR.Rsi,
+             CmpConst32 0 TwacR.Rsi,
              JumpLessThan outOfRange,
-             CmpConst 0 TwacR.Rdx,
+             CmpConst32 0 TwacR.Rdx,
              JumpLessThan outOfRange,
              Transfer TwacR.Rdx TwacR.R8,
              Add TwacR.Rsi TwacR.R8, -- end idx

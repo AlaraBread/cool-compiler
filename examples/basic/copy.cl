@@ -3,6 +3,8 @@ class Main inherits IO {
 		if b then out_string("true") else out_string("false") fi
 	};
 	m: Main;
+	m1: Main <- out_string("m1");
+	m2: Main <- out_string("m2");
 	m(): Main {m};
 	main(): Object {{
 		b(isvoid self.copy().m());

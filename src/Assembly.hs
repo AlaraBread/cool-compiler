@@ -480,7 +480,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                     ]
               InputIr.Type typeName ->
                 let TypeDetails tag size _ = typeDetailsMap Map.! type'
-                    vtable = Label $ typeName ++ "..vtable"
+                    vTable = Label $ typeName ++ "..vtable"
                  in pure $
                       instOnly $
                         callocWords size
@@ -488,7 +488,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                                Transfer TwacR.Rax TwacR.R15,
                                StoreConst (size * 8) (sizeAddress TwacR.R15),
                                StoreConst tag (typeTagAddress TwacR.R15),
-                               LoadLabel vtable r1,
+                               LoadLabel vTable r1,
                                Store r1 (vTableAddress TwacR.R15),
                                Transfer TwacR.R15 TwacR.Rdi,
                                SubtractImmediate64 8 TwacR.Rsp,
@@ -717,6 +717,8 @@ inInt typeDetailsMap =
           ++ callocWords size
           ++ [ StoreConst (size * 8) (sizeAddress TwacR.Rax),
                StoreConst tag (typeTagAddress TwacR.Rax),
+               LoadLabel (Label "Int..vtable") TwacR.R10,
+               Store TwacR.R10 (vTableAddress TwacR.Rax),
                Transfer TwacR.Rax TwacR.R14,
                -- keep the stack 16-byte aligned and give space for the char **
                -- and int * for getline

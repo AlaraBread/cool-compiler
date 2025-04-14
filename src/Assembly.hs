@@ -718,12 +718,21 @@ inInt typeDetailsMap =
           ++ [ StoreConst (size * 8) (sizeAddress TwacR.Rax),
                StoreConst tag (typeTagAddress TwacR.Rax),
                Transfer TwacR.Rax TwacR.R14,
-               LoadLabel formatLabel TwacR.Rdi,
-               Lea (attributeAddress TwacR.R14 0) TwacR.Rsi,
-               -- keep the stack 16-byte aligned
-               SubtractImmediate64 8 TwacR.Rsp,
-               Call $ Label "scanf",
-               AddImmediate64 8 TwacR.Rsp,
+               -- keep the stack 16-byte aligned and give space for the char **
+               -- and int * for getline
+               SubtractImmediate64 24 TwacR.Rsp,
+               Lea (Address (Just 16) TwacR.Rsp Nothing Nothing) TwacR.Rdi, -- char **
+               StoreConst 0 (Address (Just 16) TwacR.Rsp Nothing Nothing),
+               Lea (Address (Just 8) TwacR.Rsp Nothing Nothing) TwacR.Rsi, -- size_t * (size)
+               StoreConst 0 (Address (Just 8) TwacR.Rsp Nothing Nothing),
+               LoadLabel (Label "stdin") TwacR.Rdx, -- stdin
+               Load (Address Nothing TwacR.Rdx Nothing Nothing) TwacR.Rdx,
+               Call $ Label "getline",
+               Load (Address (Just 16) TwacR.Rsp Nothing Nothing) TwacR.Rdi, -- char *
+               LoadLabel formatLabel TwacR.Rsi, -- format
+               Lea (attributeAddress TwacR.R14 0) TwacR.Rdx, -- long *
+               Call $ Label "sscanf",
+               AddImmediate64 24 TwacR.Rsp,
                -- TODO: Should probably be a cmov, eventually
                Load (attributeAddress TwacR.R14 0) TwacR.R13,
                CmpConst 2147483647 TwacR.R13,

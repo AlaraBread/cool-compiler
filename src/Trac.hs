@@ -178,7 +178,7 @@ generateTracExpr
               do
                 (trac, variable) <- generateTracExpr' exp
                 let lhs = resolveVariable bindingMap lexeme
-                return (trac ++ [lined' $ Assign lhs variable], lhs)
+                return (trac ++ [lined' $ Assign lhs variable], variable)
           InputIr.DynamicDispatch
             { InputIr.dynamicDispatchLhs = receiver,
               InputIr.dynamicDispatchMethod = method,

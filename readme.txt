@@ -34,7 +34,7 @@ register allocation, by loading/storing everything before every operation and
 using a stack to keep track of free registers. We also reserve some registers,
 e.g. %r15 for a pointer to self, and some others for codegen.
 
-AssemblyIr is “just assembly”, i.e. a subset of x86-64 assembly as a Haskell
+AssemblyIr is "just assembly", i.e. a subset of x86-64 assembly as a Haskell
 datatype. Converting from TwacR to assembly is mostly straightforward, but we
 have some nice tools to get correct addresses for
 temporaries/attributes/parameters at compile time. Our object
@@ -48,7 +48,7 @@ new, we look at the size of the current object to allocate, then copy the
 size/type/tag/vtable pointer of the self object. Then, we call ..new.
 
 For static dispatch, we just produce a call instruction the correct method; to
-match this, in the code, we have a comment saying “this is easy! We like this.”
+match this, in the code, we have a comment saying "this is easy! We like this."
 For dynamic (and self) disptach, we first do a vtable lookup, and then call the
 address found there.
 

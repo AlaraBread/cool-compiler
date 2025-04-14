@@ -3,7 +3,7 @@
  *
  * for i in range(100):
  *     print('        out_string("' + "".join(random.choice([r'\t', r'\\', r'\"', r'\\', r'\n', 'a'] ) for i in range(100)) + '");')
-  *)
+ *)
 class Main inherits IO {
     main(): Object {{
         out_string("a\t\n\"\t\t\t\t\t\\\\\n\na\\\t\\\n\n\\\"\\\\\\\"\t\t\\\"\n\naa\"\\\"\"\\\\\\\t\n\ta\n\t\n\"\t\t\"\t\n\n\t\ta\n\\a\\\n\t\\a\t\\\"\"\"\"\"\t\\\t\\a\t\\\\\ta\t\\\t\\a\n\na\\aa\n\"\"\n\\\\\n");

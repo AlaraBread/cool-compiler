@@ -19,3 +19,6 @@ instance (Show a) => Show (Lined a) where
 
 unsequence :: (Traversable t) => Lined (t a) -> t (Lined a)
 unsequence (Lined line x) = fmap (Lined line) x
+
+showLines :: (Show a) => [a] -> String
+showLines trac = unlines (map show trac)

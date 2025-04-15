@@ -6,8 +6,7 @@ import Control.Monad.State
 import qualified Data.Map.Strict as Map
 import InputIr (Formal, Type)
 import qualified InputIr
-import qualified InputIr as Twac
-import Trac (Label, Temporary, Variable, getLabel)
+import Trac (Label, Temporary, Variable)
 import qualified Trac
 import Util
 
@@ -67,11 +66,11 @@ type TwacIIr = TwacIr Variable
 data TwacMethod v = TwacMethod {methodName :: String, body :: Twac v, formals :: [Formal], temporaryCount :: Int}
 
 instance (Show v) => Show (TwacStatement v) where
-  show t =
+  show statement =
     let showUnary op dst = show dst ++ " <- " ++ op ++ show dst
         showBinary src dst op = show dst ++ " <- " ++ show dst ++ " " ++ op ++ " " ++ show src
         showImmediate immediate dst = show dst ++ " <- " ++ show immediate
-     in case t of
+     in case statement of
           Add src dst -> showBinary src dst "+"
           Subtract src dst -> showBinary src dst "-"
           Multiply src dst -> showBinary src dst "*"
@@ -88,7 +87,7 @@ instance (Show v) => Show (TwacStatement v) where
           Default (InputIr.Type t) dst -> show dst ++ " <- default " ++ t
           IsVoid dst -> showUnary "isVoid " dst
           -- TODO: this is incomplete
-          Dispatch {dispatchResult, dispatchMethod, dispatchReceiver} -> show dispatchReceiver ++ "." ++ dispatchMethod
+          Dispatch {dispatchMethod, dispatchReceiver} -> show dispatchReceiver ++ "." ++ dispatchMethod
           Jump lbl -> "jmp " ++ show lbl
           TwacLabel lbl -> "label " ++ show lbl
           Return var -> "return " ++ show var
@@ -100,8 +99,6 @@ instance (Show v) => Show (TwacStatement v) where
           TwacCase var _ -> "case " ++ show var
           Abort line reason -> "abort " ++ show line ++ ": " ++ show reason
           TwacInternal internal -> "internal: " ++ show internal
-
-showTwac twac = unlines (map show twac)
 
 generateUnaryStatement :: (Variable -> TwacIStatement) -> Variable -> Variable -> [TwacIStatement]
 generateUnaryStatement op dst src =
@@ -135,7 +132,7 @@ generateTwacStatement tracStatement = case tracStatement of
   Trac.Comment c -> pure [Comment c]
   Trac.ConditionalJump v l -> pure [ConditionalJump v l]
   Trac.Assign dst src -> pure [Assign src dst]
-  Trac.Case resultVariable caseVariable jumpTable -> pure [TwacCase caseVariable jumpTable]
+  Trac.Case _ caseVariable jumpTable -> pure [TwacCase caseVariable jumpTable]
   Trac.TracInternal internal -> pure [TwacInternal internal]
   Trac.Abort line reason -> pure [Abort line reason]
 
@@ -149,14 +146,14 @@ tracToTwac trac =
 
 generateTwacMethod :: Trac.TracMethod -> State Temporary (TwacMethod Variable)
 generateTwacMethod (Trac.TracMethod methodName body formals temporaryCount) = do
-  modify (\(Trac.Temporary l t) -> Trac.Temporary l temporaryCount)
+  modify (\(Trac.Temporary label _) -> Trac.Temporary label temporaryCount)
   body' <- tracToTwac body
-  temporaryCount' <- gets (\(Trac.Temporary l t) -> t)
+  temporaryCount' <- gets (\(Trac.Temporary _ temporary) -> temporary)
   pure $ TwacMethod methodName body' formals temporaryCount'
 
 generateTwac :: Trac.TracIr -> Temporary -> (TwacIr Variable, Temporary)
 generateTwac (Trac.TracIr impMap typeDetailsMap) =
   runState $
     TwacIr
-      <$> traverse (traverse (traverse $ generateTwacMethod)) impMap
+      <$> traverse (traverse (traverse generateTwacMethod)) impMap
       <*> pure typeDetailsMap

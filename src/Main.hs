@@ -13,6 +13,7 @@ import System.Directory.Internal.Prelude (getArgs)
 import Trac
 import Twac
 import TwacR
+import Util
 
 -- Takes an input file name and gives us an output file name.
 outputFile :: String -> String
@@ -45,20 +46,20 @@ main = do
   when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Trac: "
   let (tracIr, temporaryState) = generateTrac pickLowestParents' inputIr
   let (TracIr tracImpMap _) = tracIr
-  let TracMethod _ body _ _ = findMethod' Trac.methodName tracImpMap
-  when debug $ putStrLn $ showTrac body
+  let TracMethod _ tracBody _ _ = findMethod' Trac.methodName tracImpMap
+  when debug $ putStrLn $ showLines tracBody
 
   when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Twac: "
   let (twacIr, temporaryState') = generateTwac tracIr temporaryState
   let TwacIr twacImpMap _ = twacIr
-  let TwacMethod _ body _ _ = findMethod' Twac.methodName twacImpMap
-  when debug $ putStrLn $ showTwac body
+  let TwacMethod _ twacBody _ _ = findMethod' Twac.methodName twacImpMap
+  when debug $ putStrLn $ showLines twacBody
 
   when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " TwacR: "
   let twacRIr = generateTwacRIr twacIr
   let TwacRIr twacRImpMap _ = twacRIr
-  let TwacRMethod _ body _ _ = findMethod' TwacR.methodName twacRImpMap
-  when debug $ putStrLn $ showTwac body
+  let TwacRMethod _ twacRBody _ _ = findMethod' TwacR.methodName twacRImpMap
+  when debug $ putStrLn $ showLines twacRBody
 
   -- when debug $ putStrLn "asm: "
   let asmIr = generateAssembly temporaryState' twacRIr

@@ -80,6 +80,7 @@ instance Show Register where
     R15 -> "%r15"
     Rip -> "%rip"
 
+showByte :: Register -> String
 showByte reg = case reg of
   Rax -> "%al"
   Rbx -> "%bl"
@@ -98,6 +99,7 @@ showByte reg = case reg of
   R14 -> "%r14b"
   R15 -> "%r15b"
 
+show32 :: Register -> String
 show32 reg = case reg of
   Rax -> "%eax"
   Rbx -> "%ebx"
@@ -116,14 +118,18 @@ show32 reg = case reg of
   R14 -> "%r14d"
   R15 -> "%r15d"
 
+allRegisters :: Set.Set Register
 allRegisters = Set.fromList [Rax, Rbx, Rcx, Rdx, Rsi, Rsp, Rbp, R8, R9, R10, R11, R12, R13, R14, R15]
 
+paramRegisters :: [Register]
 paramRegisters = [Rdi, Rsi, Rdx, Rcx, R8, R9]
 
+calleeSavedRegisters :: [Register]
 calleeSavedRegisters = [Rbp, Rbx, R12, R13, R14, R15]
 
 -- This is a really inefficient way of doing this, at least for Rax and Rdx.
 -- Anyways...
+reservedRegisters :: Set.Set Register
 reservedRegisters =
   Set.fromList
     [ Rsp, -- stack pointer
@@ -138,6 +144,7 @@ reservedRegisters =
       R14 -- callee-saved register for codegen
     ]
 
+freeRegisters :: Set.Set Register
 freeRegisters = Set.difference allRegisters reservedRegisters
 
 -- This maximally inserts loads and stores. We will worry about this later :).
@@ -287,11 +294,11 @@ generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount
       epilogue =
         Lined 0 (DeallocateStackSpace (temporarySpace + length paramRegisters'))
           : map (Lined 0 . Pop) (reverse calleeSavedRegisters)
-      -- do not touch internal exceptions, except to give them a label
+      -- do not touch internal expressions, except to give them a label
       twacR = generateTwacR epilogue body
       body' = case twacR of
         [Lined _ (TwacRStatement (TwacInternal _))] -> Lined 0 (TwacRStatement $ TwacLabel $ Label $ typeName ++ "." ++ name) : twacR
-        t -> prologue ++ twacR
+        _ -> prologue ++ twacR
    in TwacRMethod
         name
         body'

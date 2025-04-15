@@ -5,8 +5,7 @@ module Assembly where
 import Control.Monad.State
 import Data.Char (ord)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (mapMaybe, maybe)
-import Distribution.Compat.CharParsing (CharParsing (string))
+import Data.Maybe (mapMaybe)
 import InputIr (ImplementationMapEntry)
 import qualified InputIr
 import Trac (Label (..), Temporary (Temporary), TracStatement (dispatchReceiverType), TypeDetails (TypeDetails, methodTags, typeSize, typeTag), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getLabel, getVariable)
@@ -209,7 +208,7 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
     combineAssembly $
       evalState
         ( sequence
-            [ pure $ combineAssembly $ generateVTable typeDetailsMap <$> Map.toList implementationMap,
+            [ pure $ combineAssembly $ generateVTable <$> Map.toList implementationMap,
               main' typeDetailsMap,
               lessThanOrEqualTo typeDetailsMap,
               equalTo typeDetailsMap,
@@ -222,10 +221,10 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
               concatString typeDetailsMap,
               stringLength typeDetailsMap,
               stringSubstr typeDetailsMap,
-              objectCopy,
+              pure objectCopy,
               typeName typeDetailsMap,
               abort,
-              errorMessages,
+              pure errorMessages,
               do
                 let methodList =
                       fmap
@@ -238,8 +237,8 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
         )
         temporaryState
 
-generateVTable :: TypeDetailsMap -> (InputIr.Type, [ImplementationMapEntry TwacR.TwacRMethod]) -> ([AssemblyStatement], [AssemblyData])
-generateVTable typeDetailsMap (InputIr.Type selfType, entries) =
+generateVTable :: (InputIr.Type, [ImplementationMapEntry TwacR.TwacRMethod]) -> ([AssemblyStatement], [AssemblyData])
+generateVTable (InputIr.Type selfType, entries) =
   let vTableMethod :: ImplementationMapEntry TwacR.TwacRMethod -> Label
       vTableMethod (InputIr.LocalImpl m) = Label $ selfType ++ "." ++ TwacR.methodName m
       vTableMethod (InputIr.ParentImpl (InputIr.Type parentType) m) = Label $ parentType ++ "." ++ m
@@ -507,34 +506,37 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   InputIr.Type "Int" -> delegateToNew
                   InputIr.Type "Bool" -> delegateToNew
                   InputIr.Type "String" -> delegateToNew
-                  typeOther -> pure $ instOnly [LoadConst 0 dst]
+                  InputIr.Type _ -> pure $ instOnly [LoadConst 0 dst]
           Twac.IsVoid dst -> do
             -- after new, the allocated object is in Rax
             (new, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") dst
-            nonVoidLabel <- getLabel
-            endLabel <- getLabel
             set <- setBool dst JumpZero
             pure $ instOnly ([Transfer dst rCallee1] ++ new ++ [Test64 rCallee1 rCallee1] ++ set)
-          Twac.Dispatch dispatchResult dispatchReceiver dispatchReceiverType dispatchType dispatchMethod dispatchArgs ->
-            case dispatchType of
-              -- Static dispatch; this is easy! We like this.
-              Just (InputIr.Type t) -> pure $ instOnly [Call $ Label $ t ++ "." ++ dispatchMethod]
-              Nothing ->
-                let InputIr.Type dispatchReceiverTypeName = dispatchReceiverType
-                    methodTag =
-                      methodTags
-                        ( typeDetailsMap
-                            Map.! ( if dispatchReceiverTypeName == "SELF_TYPE"
-                                      then selfType
-                                      else dispatchReceiverType
-                                  )
-                        )
-                        Map.! dispatchMethod
-                 in pure $
-                      instOnly
-                        [ Load (vTableAddress dispatchReceiver) r1,
-                          CallAddress (vTableMethodAddress r1 methodTag)
-                        ]
+          Twac.Dispatch
+            { Twac.dispatchReceiver,
+              Twac.dispatchReceiverType,
+              Twac.dispatchType,
+              Twac.dispatchMethod
+            } ->
+              case dispatchType of
+                -- Static dispatch; this is easy! We like this.
+                Just (InputIr.Type t) -> pure $ instOnly [Call $ Label $ t ++ "." ++ dispatchMethod]
+                Nothing ->
+                  let InputIr.Type dispatchReceiverTypeName = dispatchReceiverType
+                      methodTag =
+                        methodTags
+                          ( typeDetailsMap
+                              Map.! ( if dispatchReceiverTypeName == "SELF_TYPE"
+                                        then selfType
+                                        else dispatchReceiverType
+                                    )
+                          )
+                          Map.! dispatchMethod
+                   in pure $
+                        instOnly
+                          [ Load (vTableAddress dispatchReceiver) r1,
+                            CallAddress (vTableMethodAddress r1 methodTag)
+                          ]
           Twac.Jump label ->
             pure $ instOnly [Jump label]
           Twac.TwacLabel label ->
@@ -642,6 +644,7 @@ calloc a b =
     Call $ Label "calloc"
   ]
 
+callocWords :: Int -> [AssemblyStatement]
 callocWords = calloc 8
 
 -- Sets a boolean based on a conditional jump passed in. If the conditional jump
@@ -707,6 +710,7 @@ main' typeDetailsMap = do
       ]
 
 -- TODO: write error handling here
+inInt :: TypeDetailsMap -> ([AssemblyStatement], [AssemblyData])
 inInt typeDetailsMap =
   let formatLabel = Label "in_int_format"
       overflowLabel = Label "in_int_overflow"
@@ -751,6 +755,7 @@ inInt typeDetailsMap =
         [RawStringConstant formatLabel "%ld"]
       )
 
+outInt :: ([AssemblyStatement], [AssemblyData])
 outInt =
   let formatLabel = Label "out_int_format"
    in ( [ AssemblyLabel $ Label "out_int",
@@ -766,6 +771,7 @@ outInt =
       )
 
 -- see out-string-state-machine.svg
+outString :: ([AssemblyStatement], [AssemblyData])
 outString =
   let loop = Label "out_string_loop"
       backslash = Label "out_string_backslash"
@@ -988,18 +994,18 @@ abort = do
       [RawStringConstant abortString "abort"]
     )
 
+errorMessages :: ([AssemblyStatement], [AssemblyData])
 errorMessages =
-  pure
-    ( [],
-      [ RawStringConstant (Label "dispatch_on_void") "ERROR: %d: Exception: dispatch on void\\n",
-        RawStringConstant (Label "static_dispatch_on_void") "ERROR: %d: Exception: static dispatch on void\\n",
-        RawStringConstant (Label "case_on_void") "ERROR: %d: Exception: case on void\\n",
-        -- using %s here is fine because we will only ever call printf with an assembly string constant that gets a null terminator automatically
-        RawStringConstant (Label "case_no_match") "ERROR: %d: Exception: case without matching branch: %s(...)\\n",
-        RawStringConstant (Label "division_by_zero") "ERROR: %d: Exception: division by zero\\n",
-        RawStringConstant (Label "substring_out_of_range") "ERROR: %d: Exception: String.substr out of range\\n"
-      ]
-    )
+  ( [],
+    [ RawStringConstant (Label "dispatch_on_void") "ERROR: %d: Exception: dispatch on void\\n",
+      RawStringConstant (Label "static_dispatch_on_void") "ERROR: %d: Exception: static dispatch on void\\n",
+      RawStringConstant (Label "case_on_void") "ERROR: %d: Exception: case on void\\n",
+      -- using %s here is fine because we will only ever call printf with an assembly string constant that gets a null terminator automatically
+      RawStringConstant (Label "case_no_match") "ERROR: %d: Exception: case without matching branch: %s(...)\\n",
+      RawStringConstant (Label "division_by_zero") "ERROR: %d: Exception: division by zero\\n",
+      RawStringConstant (Label "substring_out_of_range") "ERROR: %d: Exception: String.substr out of range\\n"
+    ]
+  )
 
 concatString :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 concatString typeDetailsMap = do
@@ -1119,28 +1125,28 @@ stringSubstr typeDetailsMap = do
       []
     )
 
+objectCopy :: ([AssemblyStatement], [AssemblyData])
 objectCopy =
-  pure
-    ( [ AssemblyLabel $ Label "copy",
-        SubtractImmediate64 8 TwacR.Rsp,
-        -- %r12 stores the original object
-        Transfer TwacR.Rdi TwacR.R12,
-        -- %r13 stores size
-        Load (sizeAddress TwacR.Rdi) TwacR.R13,
-        Transfer TwacR.R13 TwacR.Rdi,
-        Call $ Label "malloc",
-        -- %r14 stores the new object
-        Transfer TwacR.Rax TwacR.R14,
-        Transfer TwacR.Rax TwacR.Rdi,
-        Transfer TwacR.R12 TwacR.Rsi,
-        Transfer TwacR.R13 TwacR.Rdx,
-        Call $ Label "memcpy",
-        Transfer TwacR.R14 TwacR.Rax,
-        AddImmediate64 8 TwacR.Rsp,
-        Return
-      ],
-      []
-    )
+  ( [ AssemblyLabel $ Label "copy",
+      SubtractImmediate64 8 TwacR.Rsp,
+      -- %r12 stores the original object
+      Transfer TwacR.Rdi TwacR.R12,
+      -- %r13 stores size
+      Load (sizeAddress TwacR.Rdi) TwacR.R13,
+      Transfer TwacR.R13 TwacR.Rdi,
+      Call $ Label "malloc",
+      -- %r14 stores the new object
+      Transfer TwacR.Rax TwacR.R14,
+      Transfer TwacR.Rax TwacR.Rdi,
+      Transfer TwacR.R12 TwacR.Rsi,
+      Transfer TwacR.R13 TwacR.Rdx,
+      Call $ Label "memcpy",
+      Transfer TwacR.R14 TwacR.Rax,
+      AddImmediate64 8 TwacR.Rsp,
+      Return
+    ],
+    []
+  )
 
 typeName :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 typeName typeDetailsMap = do

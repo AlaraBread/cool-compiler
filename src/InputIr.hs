@@ -3,7 +3,6 @@
 module InputIr where
 
 import Data.Foldable (minimumBy)
-import Data.Int
 import qualified Data.Map.Strict as Map
 import Data.Maybe (listToMaybe)
 import Util
@@ -25,23 +24,23 @@ data ImplementationMapEntry m = LocalImpl !m | ParentImpl !Type !String
 
 instance Functor ImplementationMapEntry where
   fmap f (LocalImpl m) = LocalImpl $ f m
-  fmap f (ParentImpl t s) = ParentImpl t s
+  fmap _ (ParentImpl t s) = ParentImpl t s
 
 instance Foldable ImplementationMapEntry where
   foldMap f (LocalImpl m) = f m
-  foldMap f (ParentImpl t s) = mempty
+  foldMap _ (ParentImpl _ _) = mempty
 
 instance Traversable ImplementationMapEntry where
   traverse f (LocalImpl m) = LocalImpl <$> f m
-  traverse f (ParentImpl t s) = pure $ ParentImpl t s
+  traverse _ (ParentImpl t s) = pure $ ParentImpl t s
 
 implementationMapEntryToMaybe :: ImplementationMapEntry m -> Maybe m
 implementationMapEntryToMaybe (LocalImpl m) = Just m
-implementationMapEntryToMaybe (ParentImpl t s) = Nothing
+implementationMapEntryToMaybe (ParentImpl _ _) = Nothing
 
 implementationMapEntryName :: (m -> String) -> ImplementationMapEntry m -> String
 implementationMapEntryName f (LocalImpl m) = f m
-implementationMapEntryName f (ParentImpl t s) = s
+implementationMapEntryName _ (ParentImpl _ s) = s
 
 -- Child to parent
 type ParentMap = Map.Map Type Type

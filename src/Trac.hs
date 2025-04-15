@@ -5,7 +5,6 @@ module Trac where
 
 import Control.Monad.State
 import qualified Data.Map.Strict as Map
-import Data.Maybe (mapMaybe)
 import Distribution.Simple.Utils (lowercase)
 import InputIr (Method (methodFormals))
 import qualified InputIr
@@ -74,7 +73,7 @@ data AbortReason v
   deriving (Show)
 
 instance Show TracStatement where
-  show t = case t of
+  show statement = case statement of
     Add a b c -> showBinary a b c "+"
     Subtract a b c -> showBinary a b c "-"
     Multiply a b c -> showBinary a b c "*"
@@ -92,8 +91,6 @@ instance Show TracStatement where
     IsVoid a b -> showUnary a b "isvoid"
     Dispatch
       { dispatchResult,
-        dispatchReceiver,
-        dispatchType,
         dispatchMethod,
         dispatchArgs
       } -> show dispatchResult ++ " <- call " ++ dispatchMethod ++ " " ++ unwords (map show dispatchArgs)
@@ -128,8 +125,6 @@ instance Show Label where
 -- label count (global), temporary count (local)
 data Temporary = Temporary Int Int
   deriving (Show)
-
-showTrac trac = unlines (map show trac)
 
 getVariable :: State Temporary Variable
 getVariable = state $ \(Temporary l t) -> (TemporaryV $ t + 1, Temporary l $ t + 1)
@@ -304,7 +299,7 @@ generateTracExpr
               InputIr.whileBody
             } -> do
               (predicateTrac, predicateV) <- generateTracExpr' whilePredicate
-              (bodyTrac, bodyV) <- generateTracExpr' whileBody
+              (bodyTrac, _) <- generateTracExpr' whileBody
               outV <- getVariable
               whileStart <- getLabel
               endLabel <- getLabel
@@ -519,7 +514,7 @@ generateTracMethod ::
   InputIr.Method ->
   State Temporary TracMethod
 generateTracMethod pickLowestParents classMap attributes type' (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
-  modify (\(Trac.Temporary l t) -> Trac.Temporary l 0)
+  modify (\(Trac.Temporary label _) -> Trac.Temporary label 0)
 
   let temporaryMap = Map.empty
 
@@ -531,7 +526,7 @@ generateTracMethod pickLowestParents classMap attributes type' (InputIr.Method {
   let bindingMap = Map.union paramMap attributeMap
 
   (trac, v) <- generateTracExpr pickLowestParents classMap bindingMap type' methodBody
-  temporaryCount' <- gets (\(Temporary l t) -> t)
+  temporaryCount' <- gets (\(Temporary _ temporary) -> temporary)
   let InputIr.Type typeName = type'
       -- Do not touch internal instructions
       body = case trac of
@@ -559,9 +554,8 @@ generateTracConstructor pickLowestParents classMap selfType = do
   let defaultInitialize =
         concatMap
           ( \( InputIr.Attribute
-                 { InputIr.attrName = InputIr.Identifier {InputIr.lexeme, InputIr.line},
-                   InputIr.attrType,
-                   InputIr.attrRhs
+                 { InputIr.attrName = InputIr.Identifier {InputIr.line},
+                   InputIr.attrType
                  },
                idx
                ) -> [Lined line $ Default (AttributeV idx) attrType]
@@ -572,8 +566,7 @@ generateTracConstructor pickLowestParents classMap selfType = do
     concat
       <$> traverse
         ( \( InputIr.Attribute
-               { InputIr.attrName = InputIr.Identifier {InputIr.lexeme, InputIr.line},
-                 InputIr.attrType,
+               { InputIr.attrName = InputIr.Identifier {InputIr.line},
                  InputIr.attrRhs
                },
              idx
@@ -591,7 +584,7 @@ generateTrac ::
   ([InputIr.Type] -> Map.Map InputIr.Type (Maybe InputIr.Type)) ->
   InputIr.InputIr ->
   (TracIr, Temporary)
-generateTrac pickLowestParents (InputIr.InputIr classMap implMap parentMap ast) =
+generateTrac pickLowestParents (InputIr.InputIr classMap implMap _ _) =
   runState
     ( do
         implMap' <-

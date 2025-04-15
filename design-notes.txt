@@ -131,3 +131,60 @@
 ===================
 
   always just store stuff in memory
+
+7 optimization ideas
+====================
+- General
+  - unbox integers, bools
+  - write an interpreter lmfao
+- InputIr
+  - expression rebalancing?
+  - inlining method calls?
+  - constant string merging?
+- Cfg Ssa
+  - dead code elimination + constant folding until fixed point
+  - we can probably do a *lot* of constructors at compile time?
+  - common subexpression elimination
+  - figuring out possible dynamic types for things: allows for static dispatches, makes case cheaper
+  - liveness analysis
+  - can be void
+- Twac
+  - Optimize conditional statements where we construct temporary bools e.g. if (x < y) (maybe not worth it? saves some register pressure)
+- TwacR
+  - register allocation
+  - peephole stuff
+- AssemblyIr
+  - jump threading
+  - peephole stuff
+  - basic instruction selection
+
+8 order to do optimizations
+===========================
+- dead code elimination
+- constant folding
+- unboxing integers, bools
+- register allocation
+- write an interpreter
+- common subexpression elimination
+- peephole stuff
+- basic instruction selection
+- tail call optimization (abi passion project so her rosetta is better)
+
+9 pointer tagging
+=================
+pointers:
+00000000 00000000 xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx
+ints:
+11000000 00000000 00000000 00000000 xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx
+false:
+10100000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+true:
+10110000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+
+advantages:
+- check high bit for if its a pointer
+- check second bit for int
+- check third bit for bool
+- check fourth bit for true/false
+- bools compare correctly with 64 bit compare
+- for integers we use 32 bit compare (32 bit compares do not clear high bits)

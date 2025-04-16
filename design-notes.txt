@@ -163,7 +163,8 @@
 ===========================
 - dead code elimination
 - constant folding
-- if we do a call on a type without subtypes, we can do a static call
+- if we know a method is not redefined in any of the possible receivers, we can statically call it at the shared supertype
+- instruction scheduling
 - unboxing integers, bools
 - register allocation
 - write an interpreter
@@ -190,3 +191,14 @@ advantages:
 - check fourth bit for true/false
 - bools compare correctly with 64 bit compare
 - for integers we use 32 bit compare (32 bit compares do not clear high bits)
+
+10 Pipeline
+===========
+InputIr
+=> Trac Variable
+=> Trac SsaVariable
+=> Cfg Trac
+=> Cfg [TwacStatement]
+=> Cfg (AssemblyIr SsaVariable)
+=> Cfg (AssemblyIr Register)
+=> AssemblyIr Register

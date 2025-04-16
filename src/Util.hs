@@ -2,6 +2,8 @@
 -- code that has no clear place goes to die :).
 module Util where
 
+import Control.Monad.State (MonadState (state), State)
+
 -- So we can keep track of line numbers.
 data Lined a = Lined {line :: !Int, item :: !a}
 
@@ -22,3 +24,25 @@ unsequence (Lined line x) = fmap (Lined line) x
 
 showLines :: (Show a) => [a] -> String
 showLines trac = unlines (map show trac)
+
+-- some basic newtypes
+newtype Label = Label String
+
+newtype Type = Type String
+  deriving (Eq, Ord, Show)
+
+instance Show Label where
+  show (Label l) = l
+
+-- label count (global), temporary count (local)
+data Temporary = Temporary Int Int
+  deriving (Show)
+
+-- keep track of numbers
+data Variable = TemporaryV Int | ParameterV Int | AttributeV Int
+
+getVariable :: State Temporary Variable
+getVariable = state $ \(Temporary l t) -> (TemporaryV $ t + 1, Temporary l $ t + 1)
+
+getLabel :: State Temporary Label
+getLabel = state $ \(Temporary l t) -> (Label $ "l" ++ show (l + 1), Temporary (l + 1) t)

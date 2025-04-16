@@ -11,12 +11,12 @@ import qualified InputIr
 import Util
 
 data TracIr = TracIr
-  { implementationMap :: Map.Map InputIr.Type [InputIr.ImplementationMapEntry TracMethod],
+  { implementationMap :: Map.Map Type [InputIr.ImplementationMapEntry TracMethod],
     typeDetailsMap :: TypeDetailsMap
   }
   deriving (Show)
 
-type TypeDetailsMap = Map.Map InputIr.Type TypeDetails
+type TypeDetailsMap = Map.Map Type TypeDetails
 
 -- Type size is in words.
 data TypeDetails = TypeDetails {typeTag :: Int, typeSize :: Int, methodTags :: Map.Map String Int}
@@ -40,14 +40,14 @@ data TracStatement
   | StringConstant Variable String
   | Not Variable Variable
   | Negate Variable Variable
-  | New Variable InputIr.Type
-  | Default Variable InputIr.Type
+  | New Variable Type
+  | Default Variable Type
   | IsVoid Variable Variable
   | Dispatch
       { dispatchResult :: Variable,
         dispatchReceiver :: Variable,
-        dispatchReceiverType :: InputIr.Type,
-        dispatchType :: Maybe InputIr.Type,
+        dispatchReceiverType :: Type,
+        dispatchType :: Maybe Type,
         dispatchMethod :: String,
         dispatchArgs :: [Variable]
       }
@@ -59,7 +59,7 @@ data TracStatement
   | Assign Variable Variable
   | -- The map *must* cover every possible type, as later this gets lowered to a jump table
     -- dst, src, jumptable
-    Case Variable Variable (Map.Map InputIr.Type Label)
+    Case Variable Variable (Map.Map Type Label)
   | TracInternal InputIr.Internal
   | Abort Int (AbortReason Variable)
 
@@ -86,8 +86,8 @@ instance Show TracStatement where
     StringConstant v s -> show v ++ " <- string\n" ++ s
     Not a b -> showUnary a b "not"
     Negate a b -> showUnary a b "~"
-    New a (InputIr.Type t) -> show a ++ " <- new " ++ t
-    Default a (InputIr.Type t) -> show a ++ " <- default " ++ t
+    New a (Type t) -> show a ++ " <- new " ++ t
+    Default a (Type t) -> show a ++ " <- default " ++ t
     IsVoid a b -> showUnary a b "isvoid"
     Dispatch
       { dispatchResult,
@@ -110,33 +110,16 @@ showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c
 showUnary :: Variable -> Variable -> String -> String
 showUnary a b op = show a ++ " <- " ++ op ++ " " ++ show b
 
-data Variable = TemporaryV Int | ParameterV Int | AttributeV Int
-
 instance Show Variable where
   show (TemporaryV t) = "temp#" ++ show t
   show (AttributeV i) = "attribute#" ++ show i
   show (ParameterV i) = "parameter#" ++ show i
 
-newtype Label = Label String
-
-instance Show Label where
-  show (Label l) = l
-
--- label count (global), temporary count (local)
-data Temporary = Temporary Int Int
-  deriving (Show)
-
-getVariable :: State Temporary Variable
-getVariable = state $ \(Temporary l t) -> (TemporaryV $ t + 1, Temporary l $ t + 1)
-
-getLabel :: State Temporary Label
-getLabel = state $ \(Temporary l t) -> (Label $ "l" ++ show (l + 1), Temporary (l + 1) t)
-
 generateTracExpr ::
-  ([InputIr.Type] -> Map.Map InputIr.Type (Maybe InputIr.Type)) ->
+  ([Type] -> Map.Map Type (Maybe Type)) ->
   InputIr.ClassMap ->
   Map.Map String Variable ->
-  InputIr.Type ->
+  Type ->
   InputIr.Typed InputIr.Expr ->
   State Temporary (Trac, Variable)
 generateTracExpr
@@ -237,7 +220,7 @@ generateTracExpr
                                dispatchMethod = InputIr.lexeme method,
                                dispatchReceiver = receiverV,
                                dispatchReceiverType = InputIr.type' receiver,
-                               dispatchType = Just $ InputIr.Type $ InputIr.lexeme type',
+                               dispatchType = Just $ Type $ InputIr.lexeme type',
                                dispatchArgs = dispatchArgsV
                              }
                        ],
@@ -312,7 +295,7 @@ generateTracExpr
                     ++ bodyTrac
                     ++ [lined whilePredicate $ Jump whileStart]
                     ++ [lined whilePredicate $ TracLabel endLabel]
-                    ++ [lined whilePredicate $ Default outV $ InputIr.Type "Object"],
+                    ++ [lined whilePredicate $ Default outV $ Type "Object"],
                   outV
                 )
           InputIr.Block expressions -> do
@@ -323,7 +306,7 @@ generateTracExpr
               )
           InputIr.New InputIr.Identifier {InputIr.lexeme = typeName} -> do
             t <- getVariable
-            pure ([lined' $ New t $ InputIr.Type typeName], t)
+            pure ([lined' $ New t $ Type typeName], t)
           InputIr.IsVoid exp -> unaryOperation generateTracExpr' exp $ linedUnary IsVoid
           InputIr.Plus a b -> binaryOperation generateTracExpr' a b $ linedBinary Add
           InputIr.Minus a b -> binaryOperation generateTracExpr' a b $ linedBinary Subtract
@@ -429,7 +412,7 @@ generateTracExpr
                           dispatchArgs = [],
                           dispatchMethod = "type_name",
                           dispatchType = Nothing,
-                          dispatchReceiverType = InputIr.Type "Object",
+                          dispatchReceiverType = Type "Object",
                           dispatchResult = typeName
                         },
                       Abort lineNumber $ CaseNoMatch typeName
@@ -507,14 +490,14 @@ generateAttributeMap attributes =
       (map AttributeV [0 ..])
 
 generateTracMethod ::
-  ([InputIr.Type] -> Map.Map InputIr.Type (Maybe InputIr.Type)) ->
+  ([Type] -> Map.Map Type (Maybe Type)) ->
   InputIr.ClassMap ->
   [InputIr.Attribute] ->
-  InputIr.Type ->
+  Type ->
   InputIr.Method ->
   State Temporary TracMethod
 generateTracMethod pickLowestParents classMap attributes type' (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
-  modify (\(Trac.Temporary label _) -> Trac.Temporary label 0)
+  modify (\(Temporary label _) -> Temporary label 0)
 
   let temporaryMap = Map.empty
 
@@ -527,7 +510,7 @@ generateTracMethod pickLowestParents classMap attributes type' (InputIr.Method {
 
   (trac, v) <- generateTracExpr pickLowestParents classMap bindingMap type' methodBody
   temporaryCount' <- gets (\(Temporary _ temporary) -> temporary)
-  let InputIr.Type typeName = type'
+  let Type typeName = type'
       -- Do not touch internal instructions
       body = case trac of
         [Lined _ (TracInternal _)] -> trac
@@ -541,9 +524,9 @@ generateTracMethod pickLowestParents classMap attributes type' (InputIr.Method {
           }
 
 generateTracConstructor ::
-  ([InputIr.Type] -> Map.Map InputIr.Type (Maybe InputIr.Type)) ->
+  ([Type] -> Map.Map Type (Maybe Type)) ->
   InputIr.ClassMap ->
-  InputIr.Type ->
+  Type ->
   State Temporary Trac
 generateTracConstructor pickLowestParents classMap selfType = do
   let attrs = classMap Map.! selfType
@@ -581,7 +564,7 @@ generateTracConstructor pickLowestParents classMap selfType = do
   pure $ defaultInitialize ++ initialize
 
 generateTrac ::
-  ([InputIr.Type] -> Map.Map InputIr.Type (Maybe InputIr.Type)) ->
+  ([Type] -> Map.Map Type (Maybe Type)) ->
   InputIr.InputIr ->
   (TracIr, Temporary)
 generateTrac pickLowestParents (InputIr.InputIr classMap implMap _ _) =
@@ -606,11 +589,11 @@ generateTrac pickLowestParents (InputIr.InputIr classMap implMap _ _) =
                           TypeDetails
                             tag
                             ( case type' of
-                                InputIr.Type "Int" -> 4
-                                InputIr.Type "Bool" -> 4
+                                Type "Int" -> 4
+                                Type "Bool" -> 4
                                 -- string itself, length, capacity
-                                InputIr.Type "String" -> 6
-                                InputIr.Type _ -> 3 + length attrs
+                                Type "String" -> 6
+                                Type _ -> 3 + length attrs
                             )
                             $ Map.fromList
                             $ zip

@@ -137,9 +137,6 @@ data Typed a = Typed {type' :: !Type, item :: !a}
 instance Functor Typed where
   fmap f (Typed type' item) = Typed type' $ f item
 
-newtype Type = Type String
-  deriving (Eq, Ord, Show)
-
 -- Represents an identifier; fairly self explanatory
 data Identifier = Identifier
   { line :: !Int,

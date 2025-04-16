@@ -8,7 +8,7 @@ import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import InputIr (ImplementationMapEntry)
 import qualified InputIr
-import Trac (Label (..), Temporary (Temporary), TracStatement (dispatchReceiverType), TypeDetails (TypeDetails, methodTags, typeSize, typeTag), TypeDetailsMap, Variable (AttributeV, ParameterV, TemporaryV), getLabel, getVariable)
+import Trac (TracStatement (dispatchReceiverType), TypeDetails (TypeDetails, methodTags, typeSize, typeTag), TypeDetailsMap)
 import qualified Trac
 import qualified Twac
 import TwacR (TwacRStatement (TwacRStatement), showByte)
@@ -237,11 +237,11 @@ generateAssembly temporaryState TwacR.TwacRIr {TwacR.implementationMap, TwacR.ty
         )
         temporaryState
 
-generateVTable :: (InputIr.Type, [ImplementationMapEntry TwacR.TwacRMethod]) -> ([AssemblyStatement], [AssemblyData])
-generateVTable (InputIr.Type selfType, entries) =
+generateVTable :: (Type, [ImplementationMapEntry TwacR.TwacRMethod]) -> ([AssemblyStatement], [AssemblyData])
+generateVTable (Type selfType, entries) =
   let vTableMethod :: ImplementationMapEntry TwacR.TwacRMethod -> Label
       vTableMethod (InputIr.LocalImpl m) = Label $ selfType ++ "." ++ TwacR.methodName m
-      vTableMethod (InputIr.ParentImpl (InputIr.Type parentType) m) = Label $ parentType ++ "." ++ m
+      vTableMethod (InputIr.ParentImpl (Type parentType) m) = Label $ parentType ++ "." ++ m
    in ( [],
         [ VTable
             { vTableLabel = Label $ selfType ++ "..vtable",
@@ -250,7 +250,7 @@ generateVTable (InputIr.Type selfType, entries) =
         ]
       )
 
-generateAssemblyMethod :: InputIr.Type -> TypeDetailsMap -> TwacR.TwacRMethod -> State Temporary ([AssemblyStatement], [AssemblyData])
+generateAssemblyMethod :: Type -> TypeDetailsMap -> TwacR.TwacRMethod -> State Temporary ([AssemblyStatement], [AssemblyData])
 generateAssemblyMethod selfType typeDetailsMap method = do
   lines <-
     traverse
@@ -331,7 +331,7 @@ vTableMethodAddress r n = Address (Just $ n * 8) r Nothing Nothing
 attributeAddress :: TwacR.Register -> Int -> Address
 attributeAddress reg n = Address (Just $ (n + 3) * 8) reg Nothing Nothing
 
-generateAssemblyStatements :: InputIr.Type -> Int -> TypeDetailsMap -> TwacR.TwacRStatement -> State Temporary ([AssemblyStatement], [AssemblyData])
+generateAssemblyStatements :: Type -> Int -> TypeDetailsMap -> TwacR.TwacRStatement -> State Temporary ([AssemblyStatement], [AssemblyData])
 generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRStatement =
   let generateAssemblyStatements' = generateAssemblyStatements selfType registerParamCount typeDetailsMap
       getAddress' = getAddress registerParamCount
@@ -414,15 +414,15 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   Transfer TwacR.Rax dst
                 ]
           Twac.IntConstant i dst -> do
-            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Int") dst
+            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (Type "Int") dst
             pure $ instOnly $ construction ++ [LoadConst i r1, Store r1 (attributeAddress dst 0)]
           Twac.BoolConstant b dst -> do
-            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") dst
+            (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (Type "Bool") dst
             pure $ instOnly $ construction ++ [LoadConst (if b then 1 else 0) r1, Store r1 (attributeAddress dst 0)]
           Twac.StringConstant string dst -> do
             let s = sanitizeString string
             let stringLength = length string
-            let typeDetails = typeDetailsMap Map.! InputIr.Type "String"
+            let typeDetails = typeDetailsMap Map.! Type "String"
             stringConstantLabel <- getLabel
 
             pure
@@ -457,7 +457,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
           -- non-SELF_TYPE construction.
           Twac.New type' dst ->
             case type' of
-              InputIr.Type "SELF_TYPE" ->
+              Type "SELF_TYPE" ->
                 pure $
                   instOnly
                     [ Push TwacR.Rdi,
@@ -477,7 +477,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                       Transfer TwacR.Rdi dst,
                       Pop TwacR.Rdi
                     ]
-              InputIr.Type typeName ->
+              Type typeName ->
                 let TypeDetails tag size _ = typeDetailsMap Map.! type'
                     vTable = Label $ typeName ++ "..vtable"
                  in pure $
@@ -503,13 +503,13 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   -- However, this special handling happens to do the exact same
                   -- thing as New. So, let us just generate assembly for that,
                   -- so we do not have to do the fiddly bit twice :).
-                  InputIr.Type "Int" -> delegateToNew
-                  InputIr.Type "Bool" -> delegateToNew
-                  InputIr.Type "String" -> delegateToNew
-                  InputIr.Type _ -> pure $ instOnly [LoadConst 0 dst]
+                  Type "Int" -> delegateToNew
+                  Type "Bool" -> delegateToNew
+                  Type "String" -> delegateToNew
+                  Type _ -> pure $ instOnly [LoadConst 0 dst]
           Twac.IsVoid dst -> do
             -- after new, the allocated object is in Rax
-            (new, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (InputIr.Type "Bool") dst
+            (new, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (Type "Bool") dst
             set <- setBool dst JumpZero
             pure $ instOnly ([Transfer dst rCallee1] ++ new ++ [Test64 rCallee1 rCallee1] ++ set)
           Twac.Dispatch
@@ -520,9 +520,9 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
             } ->
               case dispatchType of
                 -- Static dispatch; this is easy! We like this.
-                Just (InputIr.Type t) -> pure $ instOnly [Call $ Label $ t ++ "." ++ dispatchMethod]
+                Just (Type t) -> pure $ instOnly [Call $ Label $ t ++ "." ++ dispatchMethod]
                 Nothing ->
-                  let InputIr.Type dispatchReceiverTypeName = dispatchReceiverType
+                  let Type dispatchReceiverTypeName = dispatchReceiverType
                       methodTag =
                         methodTags
                           ( typeDetailsMap
@@ -677,12 +677,12 @@ sanitizeChar c = [c]
 -- haskell doesn't like circular dependencies 😭
 main' :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 main' typeDetailsMap = do
-  let type' = InputIr.Type "Main"
+  let type' = Type "Main"
   let label = Label "main"
   body <-
     combineAssembly
       <$> mapM
-        (generateAssemblyStatements (InputIr.Type "") 1 typeDetailsMap)
+        (generateAssemblyStatements (Type "") 1 typeDetailsMap)
         [ TwacRStatement $ Twac.TwacLabel label,
           TwacR.Push TwacR.Rbx,
           TwacR.Push TwacR.Rbp,
@@ -715,7 +715,7 @@ inInt typeDetailsMap =
   let formatLabel = Label "in_int_format"
       overflowLabel = Label "in_int_overflow"
       noOverflowLabel = Label "in_int_no_overflow"
-      TypeDetails tag size _ = typeDetailsMap Map.! InputIr.Type "Int"
+      TypeDetails tag size _ = typeDetailsMap Map.! Type "Int"
    in ( [AssemblyLabel $ Label "in_int"]
           -- since we calloc, the integer starts at zero
           ++ callocWords size
@@ -869,8 +869,8 @@ inString typeDetailsMap =
     error <- getLabel
     endLoop <- getLabel
     let registerParamCount = 2
-        generateAssemblyStatements' = generateAssemblyStatements (InputIr.Type "") registerParamCount typeDetailsMap
-    (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.Rax
+        generateAssemblyStatements' = generateAssemblyStatements (Type "") registerParamCount typeDetailsMap
+    (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (Type "String") TwacR.Rax
     pure
       ( [ AssemblyLabel $ Label "in_string",
           SubtractImmediate64 8 TwacR.Rsp
@@ -1010,8 +1010,8 @@ errorMessages =
 concatString :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 concatString typeDetailsMap = do
   let registerParamCount = 2
-      generateAssemblyStatements' = generateAssemblyStatements (InputIr.Type "") registerParamCount typeDetailsMap
-  (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.R8
+      generateAssemblyStatements' = generateAssemblyStatements (Type "") registerParamCount typeDetailsMap
+  (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (Type "String") TwacR.R8
   pure
     ( [ AssemblyLabel $ Label "concat",
         SubtractImmediate64 8 TwacR.Rsp,
@@ -1066,8 +1066,8 @@ concatString typeDetailsMap = do
 stringLength :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 stringLength typeDetailsMap = do
   let registerParamCount = 1
-      generateAssemblyStatements' = generateAssemblyStatements (InputIr.Type "") registerParamCount typeDetailsMap
-  (newInt, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "Int") TwacR.Rax
+      generateAssemblyStatements' = generateAssemblyStatements (Type "") registerParamCount typeDetailsMap
+  (newInt, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (Type "Int") TwacR.Rax
   pure
     ( [ AssemblyLabel $ Label "length",
         Push TwacR.Rdi
@@ -1084,8 +1084,8 @@ stringLength typeDetailsMap = do
 stringSubstr :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 stringSubstr typeDetailsMap = do
   let registerParamCount = 3
-      generateAssemblyStatements' = generateAssemblyStatements (InputIr.Type "") registerParamCount typeDetailsMap
-  (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (InputIr.Type "String") TwacR.Rax
+      generateAssemblyStatements' = generateAssemblyStatements (Type "") registerParamCount typeDetailsMap
+  (newString, _) <- generateAssemblyStatements' $ TwacR.TwacRStatement $ Twac.New (Type "String") TwacR.Rax
   outOfRange <- getLabel
   pure
     ( [ AssemblyLabel $ Label "substr",
@@ -1156,7 +1156,7 @@ typeName typeDetailsMap = do
 
   let stringConstants =
         zipWith
-          ( \label (InputIr.Type typeName, typeDetails) ->
+          ( \label (Type typeName, typeDetails) ->
               StringConstant
                 { stringConstantLabel = label,
                   stringConstantObjectSize = 8 * typeSize typeDetails,
@@ -1185,9 +1185,9 @@ typeName typeDetailsMap = do
 lessThanOrEqualTo :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 lessThanOrEqualTo typeDetailsMap = do
   boolConstruction <-
-    generateAssemblyStatements (InputIr.Type "") 1 typeDetailsMap $
+    generateAssemblyStatements (Type "") 1 typeDetailsMap $
       TwacRStatement $
-        Twac.New (InputIr.Type "Bool") TwacR.R14
+        Twac.New (Type "Bool") TwacR.R14
 
   let exitBlock label value =
         [ AssemblyLabel label,
@@ -1257,7 +1257,7 @@ lessThanOrEqualTo typeDetailsMap = do
           Jump falseLabel
         ]
 
-  let getTypeTag typeName = toInteger $ typeTag $ typeDetailsMap Map.! InputIr.Type typeName
+  let getTypeTag typeName = toInteger $ typeTag $ typeDetailsMap Map.! Type typeName
 
   -- here we jump to the appropriate specific comparison blocks when relevant. We consider a <= b.
   let decisionBlock =
@@ -1301,9 +1301,9 @@ lessThanOrEqualTo typeDetailsMap = do
 equalTo :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 equalTo typeDetailsMap = do
   boolConstruction <-
-    generateAssemblyStatements (InputIr.Type "") 1 typeDetailsMap $
+    generateAssemblyStatements (Type "") 1 typeDetailsMap $
       TwacRStatement $
-        Twac.New (InputIr.Type "Bool") TwacR.R14
+        Twac.New (Type "Bool") TwacR.R14
 
   let exitBlock label value =
         [ AssemblyLabel label,
@@ -1365,7 +1365,7 @@ equalTo typeDetailsMap = do
           Jump falseLabel
         ]
 
-  let getTypeTag typeName = toInteger $ typeTag $ typeDetailsMap Map.! InputIr.Type typeName
+  let getTypeTag typeName = toInteger $ typeTag $ typeDetailsMap Map.! Type typeName
 
   -- here we jump to the appropriate specific comparison blocks when relevant. We consider a <= b.
   let decisionBlock =
@@ -1409,9 +1409,9 @@ equalTo typeDetailsMap = do
 lessThan :: TypeDetailsMap -> State Temporary ([AssemblyStatement], [AssemblyData])
 lessThan typeDetailsMap = do
   boolConstruction <-
-    generateAssemblyStatements (InputIr.Type "") 1 typeDetailsMap $
+    generateAssemblyStatements (Type "") 1 typeDetailsMap $
       TwacRStatement $
-        Twac.New (InputIr.Type "Bool") TwacR.R14
+        Twac.New (Type "Bool") TwacR.R14
 
   let exitBlock label value =
         [ AssemblyLabel label,
@@ -1473,7 +1473,7 @@ lessThan typeDetailsMap = do
           Jump falseLabel
         ]
 
-  let getTypeTag typeName = toInteger $ typeTag $ typeDetailsMap Map.! InputIr.Type typeName
+  let getTypeTag typeName = toInteger $ typeTag $ typeDetailsMap Map.! Type typeName
 
   -- here we jump to the appropriate specific comparison blocks when relevant. We consider a <= b.
   let decisionBlock =

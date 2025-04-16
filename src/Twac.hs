@@ -4,9 +4,8 @@ module Twac where
 
 import Control.Monad.State
 import qualified Data.Map.Strict as Map
-import InputIr (Formal, Type)
+import InputIr (Formal)
 import qualified InputIr
-import Trac (Label, Temporary, Variable)
 import qualified Trac
 import Util
 
@@ -57,7 +56,7 @@ data TwacStatement v
   | TwacInternal InputIr.Internal
 
 data TwacIr v = TwacIr
-  { implementationMap :: Map.Map InputIr.Type [InputIr.ImplementationMapEntry (TwacMethod v)],
+  { implementationMap :: Map.Map Type [InputIr.ImplementationMapEntry (TwacMethod v)],
     typeDetails :: Trac.TypeDetailsMap
   }
 
@@ -83,8 +82,8 @@ instance (Show v) => Show (TwacStatement v) where
           StringConstant i dst -> showImmediate i dst
           Not dst -> showUnary "not " dst
           Negate dst -> showUnary "~" dst
-          New (InputIr.Type t) dst -> show dst ++ " <- new " ++ t
-          Default (InputIr.Type t) dst -> show dst ++ " <- default " ++ t
+          New (Type t) dst -> show dst ++ " <- new " ++ t
+          Default (Type t) dst -> show dst ++ " <- default " ++ t
           IsVoid dst -> showUnary "isVoid " dst
           -- TODO: this is incomplete
           Dispatch {dispatchMethod, dispatchReceiver} -> show dispatchReceiver ++ "." ++ dispatchMethod
@@ -146,9 +145,9 @@ tracToTwac trac =
 
 generateTwacMethod :: Trac.TracMethod -> State Temporary (TwacMethod Variable)
 generateTwacMethod (Trac.TracMethod methodName body formals temporaryCount) = do
-  modify (\(Trac.Temporary label _) -> Trac.Temporary label temporaryCount)
+  modify (\(Temporary label _) -> Temporary label temporaryCount)
   body' <- tracToTwac body
-  temporaryCount' <- gets (\(Trac.Temporary _ temporary) -> temporary)
+  temporaryCount' <- gets (\(Temporary _ temporary) -> temporary)
   pure $ TwacMethod methodName body' formals temporaryCount'
 
 generateTwac :: Trac.TracIr -> Temporary -> (TwacIr Variable, Temporary)

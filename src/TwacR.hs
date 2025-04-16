@@ -5,8 +5,8 @@ module TwacR where
 import Control.Exception (assert)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import InputIr (Formal, ImplementationMapEntry, Type (Type))
-import Trac (AbortReason (..), Label (Label), TypeDetailsMap, Variable (ParameterV))
+import InputIr (Formal, ImplementationMapEntry)
+import Trac (AbortReason (..), TypeDetailsMap)
 import Twac
 import Util
 

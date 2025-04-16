@@ -141,6 +141,7 @@
   - expression rebalancing?
   - inlining method calls?
   - constant string merging?
+  - if we do a call on a type without subtypes, we can do a static call
 - Cfg Ssa
   - dead code elimination + constant folding until fixed point
   - we can probably do a *lot* of constructors at compile time?
@@ -162,6 +163,7 @@
 ===========================
 - dead code elimination
 - constant folding
+- if we do a call on a type without subtypes, we can do a static call
 - unboxing integers, bools
 - register allocation
 - write an interpreter

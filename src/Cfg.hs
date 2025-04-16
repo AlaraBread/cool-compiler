@@ -1,26 +1,36 @@
-type Ssa = Trac SsaVariable
+module InputIr where
 
-data Cfg = Cfg
-  { cfgChildren :: Map.Map Label (Set Label),
-    cfgBlocks :: Map.Map Label [Ssa]
+import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
+import Util
+
+data Cfg s = Cfg
+  { cfgChildren :: Map.Map Label (Set.Set Label),
+    cfgBlocks :: Map.Map Label [s]
   }
 
 -- this will reverse the edges and also reverse the statements in cfgBlocks
-reverseCfg :: Cfg -> Cfg
+reverseCfg :: Cfg s -> Cfg s
 reverseCfg = undefined
 
-class Lattice a where
+class (Eq a) => Lattice a where
   top :: a
   bottom :: a
   meet :: a -> a -> a
   join :: a -> a -> a -- aka lub
+  (<=) :: a -> a -> Bool
+  (<=) a b = join a b == b
 
-instance PartialOrd (Lattice a) where
-  (<=) = (join a b) == b
+-- s: statement type
+-- v: underlying variable type
+-- a: abstract value type (Lattice)
 
-class (Lattice a) => Ai a where
-  addTf :: a -> a -> a
+type TransferFunction s v a = (Lattice a) => Map.Map v a -> s -> Map.Map v a
+
+class (Lattice a) => Ai s v a where
+  tf :: TransferFunction s v a
 
 -- ......
 
-runAi :: (Ai a) => Cfg -> Map SsaVariable a
+runAi :: (Ai s v a) => Cfg s -> Map.Map v a
+runAi = undefined

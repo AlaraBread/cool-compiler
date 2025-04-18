@@ -99,15 +99,15 @@ instance (Show v) => Show (TwacStatement v) where
           Abort line reason -> "abort " ++ show line ++ ": " ++ show reason
           TwacInternal internal -> "internal: " ++ show internal
 
-generateUnaryStatement :: (Variable -> TwacIStatement) -> Variable -> Variable -> [TwacIStatement]
+generateUnaryStatement :: (v -> TwacStatement v) -> v -> v -> [TwacStatement v]
 generateUnaryStatement op dst src =
   [Copy src dst, op dst]
 
-generateBinaryStatement :: (Variable -> Variable -> TwacIStatement) -> Variable -> Variable -> Variable -> [TwacIStatement]
+generateBinaryStatement :: (v -> v -> TwacStatement v) -> v -> v -> v -> [TwacStatement v]
 generateBinaryStatement op dst src1 src2 =
   [Copy src1 dst, op src2 dst]
 
-generateTwacStatement :: Trac.TracStatement -> State Temporary [TwacIStatement]
+generateTwacStatement :: Trac.TracStatement v -> State Temporary [TwacStatement v]
 generateTwacStatement tracStatement = case tracStatement of
   Trac.Add dst src1 src2 -> pure $ generateBinaryStatement Add dst src1 src2
   Trac.Subtract dst src1 src2 -> pure $ generateBinaryStatement Subtract dst src1 src2
@@ -139,18 +139,18 @@ generateTwacStatement tracStatement = case tracStatement of
 -- written. I think I am leaning towards the most ugly. This is hyperbole of
 -- course, but it's... certainly something. Honestly, I constructed it through
 -- iterating away type errors.
-tracToTwac :: Trac.Trac -> State Temporary TwacI
+tracToTwac :: Trac.Trac v -> State Temporary (Twac v)
 tracToTwac trac =
   concatMap unsequence <$> mapM (mapM generateTwacStatement) trac
 
-generateTwacMethod :: Trac.TracMethod -> State Temporary (TwacMethod Variable)
+generateTwacMethod :: Trac.TracMethod Variable -> State Temporary (TwacMethod Variable)
 generateTwacMethod (Trac.TracMethod methodName body formals temporaryCount) = do
   modify (\(Temporary label _) -> Temporary label temporaryCount)
   body' <- tracToTwac body
   temporaryCount' <- gets (\(Temporary _ temporary) -> temporary)
   pure $ TwacMethod methodName body' formals temporaryCount'
 
-generateTwac :: Trac.TracIr -> Temporary -> (TwacIr Variable, Temporary)
+generateTwac :: Trac.TracIr Variable -> Temporary -> (TwacIr Variable, Temporary)
 generateTwac (Trac.TracIr impMap typeDetailsMap) =
   runState $
     TwacIr

@@ -167,6 +167,7 @@
 - instruction scheduling
 - unboxing integers, bools
 - register allocation
+- we can delete methods/classes not in the call graph from main
 - write an interpreter
 - common subexpression elimination
 - peephole stuff

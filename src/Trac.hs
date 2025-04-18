@@ -10,8 +10,8 @@ import InputIr (Method (methodFormals))
 import qualified InputIr
 import Util
 
-data TracIr = TracIr
-  { implementationMap :: Map.Map Type [InputIr.ImplementationMapEntry TracMethod],
+data TracIr v = TracIr
+  { implementationMap :: Map.Map Type [InputIr.ImplementationMapEntry (TracMethod v)],
     typeDetailsMap :: TypeDetailsMap
   }
   deriving (Show)
@@ -22,46 +22,46 @@ type TypeDetailsMap = Map.Map Type TypeDetails
 data TypeDetails = TypeDetails {typeTag :: Int, typeSize :: Int, methodTags :: Map.Map String Int}
   deriving (Show)
 
-data TracMethod = TracMethod {methodName :: String, body :: Trac, formals :: [InputIr.Formal], temporaryCount :: Int}
+data TracMethod v = TracMethod {methodName :: String, body :: Trac v, formals :: [InputIr.Formal], temporaryCount :: Int}
   deriving (Show)
 
-type Trac = [Lined TracStatement]
+type Trac v = [Lined (TracStatement v)]
 
-data TracStatement
-  = Add Variable Variable Variable
-  | Subtract Variable Variable Variable
-  | Multiply Variable Variable Variable
-  | Divide Variable Variable Variable
-  | LessThan Variable Variable Variable
-  | LessThanOrEqualTo Variable Variable Variable
-  | Equals Variable Variable Variable
-  | IntConstant Variable Int
-  | BoolConstant Variable Bool
-  | StringConstant Variable String
-  | Not Variable Variable
-  | Negate Variable Variable
-  | New Variable Type
-  | Default Variable Type
-  | IsVoid Variable Variable
+data TracStatement v
+  = Add v v v
+  | Subtract v v v
+  | Multiply v v v
+  | Divide v v v
+  | LessThan v v v
+  | LessThanOrEqualTo v v v
+  | Equals v v v
+  | IntConstant v Int
+  | BoolConstant v Bool
+  | StringConstant v String
+  | Not v v
+  | Negate v v
+  | New v Type
+  | Default v Type
+  | IsVoid v v
   | Dispatch
-      { dispatchResult :: Variable,
-        dispatchReceiver :: Variable,
+      { dispatchResult :: v,
+        dispatchReceiver :: v,
         dispatchReceiverType :: Type,
         dispatchType :: Maybe Type,
         dispatchMethod :: String,
-        dispatchArgs :: [Variable]
+        dispatchArgs :: [v]
       }
   | Jump Label
   | TracLabel Label
-  | Return Variable
+  | Return v
   | Comment String
-  | ConditionalJump Variable Label
-  | Assign Variable Variable
+  | ConditionalJump v Label
+  | Assign v v
   | -- The map *must* cover every possible type, as later this gets lowered to a jump table
     -- dst, src, jumptable
-    Case Variable Variable (Map.Map Type Label)
+    Case v v (Map.Map Type Label)
   | TracInternal InputIr.Internal
-  | Abort Int (AbortReason Variable)
+  | Abort Int (AbortReason v)
 
 data AbortReason v
   = DispatchOnVoid
@@ -72,7 +72,7 @@ data AbortReason v
   | SubstringOutOfRange
   deriving (Show)
 
-instance Show TracStatement where
+instance (Show v) => Show (TracStatement v) where
   show statement = case statement of
     Add a b c -> showBinary a b c "+"
     Subtract a b c -> showBinary a b c "-"
@@ -104,10 +104,10 @@ instance Show TracStatement where
     TracInternal internal -> "internal: " ++ show internal
     Abort line reason -> "abort " ++ show line ++ " " ++ show reason
 
-showBinary :: Variable -> Variable -> Variable -> String -> String
+showBinary :: (Show v) => v -> v -> v -> String -> String
 showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c
 
-showUnary :: Variable -> Variable -> String -> String
+showUnary :: (Show v) => v -> v -> String -> String
 showUnary a b op = show a ++ " <- " ++ op ++ " " ++ show b
 
 instance Show Variable where
@@ -121,7 +121,7 @@ generateTracExpr ::
   Map.Map String Variable ->
   Type ->
   InputIr.Typed InputIr.Expr ->
-  State Temporary (Trac, Variable)
+  State Temporary (Trac Variable, Variable)
 generateTracExpr
   pickLowestParents
   classMap
@@ -448,12 +448,12 @@ generateTracExpr
 
 binaryOperation ::
   ( InputIr.Typed InputIr.Expr ->
-    State Temporary (Trac, Variable)
+    State Temporary (Trac Variable, Variable)
   ) ->
   InputIr.Typed InputIr.Expr ->
   InputIr.Typed InputIr.Expr ->
-  (Variable -> Variable -> Variable -> Lined TracStatement) ->
-  State Temporary (Trac, Variable)
+  (Variable -> Variable -> Variable -> Lined (TracStatement Variable)) ->
+  State Temporary (Trac Variable, Variable)
 binaryOperation generateTracExpr' a b op = do
   (aTrac, aV) <- generateTracExpr' a
   (bTrac, bV) <- generateTracExpr' b
@@ -462,17 +462,17 @@ binaryOperation generateTracExpr' a b op = do
 
 unaryOperation ::
   ( InputIr.Typed InputIr.Expr ->
-    State Temporary (Trac, Variable)
+    State Temporary (Trac Variable, Variable)
   ) ->
   InputIr.Typed InputIr.Expr ->
-  (Variable -> Variable -> Lined TracStatement) ->
-  State Temporary (Trac, Variable)
+  (Variable -> Variable -> Lined (TracStatement Variable)) ->
+  State Temporary (Trac Variable, Variable)
 unaryOperation generateTracExpr' exp op = do
   (trac, v) <- generateTracExpr' exp
   resultV <- getVariable
   pure (trac ++ [op resultV v], resultV)
 
-constant :: Int -> (Variable -> a -> TracStatement) -> a -> State Temporary (Trac, Variable)
+constant :: Int -> (Variable -> a -> TracStatement Variable) -> a -> State Temporary (Trac Variable, Variable)
 constant line statement c = do
   resultV <- getVariable
   pure ([Lined line $ statement resultV c], resultV)
@@ -495,7 +495,7 @@ generateTracMethod ::
   [InputIr.Attribute] ->
   Type ->
   InputIr.Method ->
-  State Temporary TracMethod
+  State Temporary (TracMethod Variable)
 generateTracMethod pickLowestParents classMap attributes type' (InputIr.Method {InputIr.methodName, InputIr.methodFormals, InputIr.methodBody}) = do
   modify (\(Temporary label _) -> Temporary label 0)
 
@@ -527,7 +527,7 @@ generateTracConstructor ::
   ([Type] -> Map.Map Type (Maybe Type)) ->
   InputIr.ClassMap ->
   Type ->
-  State Temporary Trac
+  State Temporary (Trac Variable)
 generateTracConstructor pickLowestParents classMap selfType = do
   let attrs = classMap Map.! selfType
   let attributeMap = generateAttributeMap attrs
@@ -566,7 +566,7 @@ generateTracConstructor pickLowestParents classMap selfType = do
 generateTrac ::
   ([Type] -> Map.Map Type (Maybe Type)) ->
   InputIr.InputIr ->
-  (TracIr, Temporary)
+  (TracIr Variable, Temporary)
 generateTrac pickLowestParents (InputIr.InputIr classMap implMap _ _) =
   runState
     ( do

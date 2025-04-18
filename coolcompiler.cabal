@@ -1,0 +1,26 @@
+cabal-version: 3.0
+name: coolcompiler
+version: 0.1.0.0
+build-type: Simple
+
+common warnings
+  ghc-options: -Wall
+
+executable coolcompiler
+  import: warnings
+  main-is: Main.hs
+  build-depends: base ^>=4.18.3.0
+  build-depends: directory ^>=1.3.8.5
+  build-depends: containers ^>=0.6.7
+  build-depends: mtl ^>=2.3.1
+  build-depends: Cabal ^>=3.10.3.0
+  hs-source-dirs: src
+  default-language: Haskell2010
+  other-modules: Util
+  other-modules: TwacR
+  other-modules: Twac
+  other-modules: Trac
+  other-modules: InputIr
+  other-modules: InputIrParser
+  other-modules: Cfg
+  other-modules: Assembly

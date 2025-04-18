@@ -1,4 +1,7 @@
-module InputIr where
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
+
+module Cfg where
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set

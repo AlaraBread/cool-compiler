@@ -110,11 +110,6 @@ showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c
 showUnary :: (Show v) => v -> v -> String -> String
 showUnary a b op = show a ++ " <- " ++ op ++ " " ++ show b
 
-instance Show Variable where
-  show (TemporaryV t) = "temp#" ++ show t
-  show (AttributeV i) = "attribute#" ++ show i
-  show (ParameterV i) = "parameter#" ++ show i
-
 generateTracExpr ::
   ([Type] -> Map.Map Type (Maybe Type)) ->
   InputIr.ClassMap ->

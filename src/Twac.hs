@@ -11,11 +11,6 @@ import Util
 
 type Twac v = [Lined (TwacStatement v)]
 
--- TwacI means TWAC initial, i.e. our first version of TWAC in the pipeline.
-type TwacI = Twac Variable
-
-type TwacIStatement = TwacStatement Variable
-
 -- Note: we follow src, dst ordering here. This matches AT&T syntax in general.
 -- This is mildly backwards from Trac, where we have dest src1 src2.
 
@@ -59,8 +54,6 @@ data TwacIr v = TwacIr
   { implementationMap :: Map.Map Type [InputIr.ImplementationMapEntry (TwacMethod v)],
     typeDetails :: Trac.TypeDetailsMap
   }
-
-type TwacIIr = TwacIr Variable
 
 data TwacMethod v = TwacMethod {methodName :: String, body :: Twac v, formals :: [Formal], temporaryCount :: Int}
 

@@ -41,6 +41,11 @@ data Temporary = Temporary Int Int
 -- keep track of numbers
 data Variable = TemporaryV Int | ParameterV Int | AttributeV Int
 
+instance Show Variable where
+  show (TemporaryV t) = "temp#" ++ show t
+  show (AttributeV i) = "attribute#" ++ show i
+  show (ParameterV i) = "parameter#" ++ show i
+
 getVariable :: State Temporary Variable
 getVariable = state $ \(Temporary l t) -> (TemporaryV $ t + 1, Temporary l $ t + 1)
 

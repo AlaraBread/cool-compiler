@@ -2,10 +2,9 @@
 
 module TwacR where
 
-import Control.Exception (assert)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-import InputIr (Formal, ImplementationMapEntry)
+import InputIr (ImplementationMapEntry)
 import Trac (AbortReason (..), TypeDetailsMap)
 import Twac
 import Util
@@ -148,7 +147,7 @@ freeRegisters :: Set.Set Register
 freeRegisters = Set.difference allRegisters reservedRegisters
 
 -- This maximally inserts loads and stores. We will worry about this later :).
-generateTwacRStatements :: TwacR -> Set.Set Register -> TwacIStatement -> [TwacRStatement]
+generateTwacRStatements :: TwacR -> Set.Set Register -> TwacStatement Variable -> [TwacRStatement]
 generateTwacRStatements epilogue freeRegisters twac =
   let -- The invariant on all of these is that any registers they consume should
       -- be free-to-use after they run.
@@ -268,7 +267,7 @@ generateTwacRStatements epilogue freeRegisters twac =
                    in [Load v typeNameR, TwacRStatement $ Abort line $ CaseNoMatch typeNameR]
         TwacInternal internal -> [TwacRStatement $ TwacInternal internal]
 
-generateTwacR :: TwacR -> TwacI -> TwacR
+generateTwacR :: TwacR -> Twac Variable -> TwacR
 generateTwacR epilogue = concatMap (unsequence . fmap (generateTwacRStatements epilogue freeRegisters))
 
 generateTwacRMethod :: Type -> TwacMethod Variable -> TwacRMethod
@@ -305,7 +304,7 @@ generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount
         registerParamCount
         memoryParamCount
 
-generateTwacRIr :: TwacIIr -> TwacRIr
+generateTwacRIr :: TwacIr Variable -> TwacRIr
 generateTwacRIr (TwacIr impMap typeDetailsMap) =
   TwacRIr
     (Map.mapWithKey (fmap . fmap . generateTwacRMethod) impMap)

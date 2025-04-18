@@ -8,7 +8,7 @@ import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import InputIr (ImplementationMapEntry)
 import qualified InputIr
-import Trac (TracStatement (dispatchReceiverType), TypeDetails (TypeDetails, methodTags, typeSize, typeTag), TypeDetailsMap)
+import Trac (TypeDetails (TypeDetails, methodTags, typeSize, typeTag), TypeDetailsMap)
 import qualified Trac
 import qualified Twac
 import TwacR (TwacRStatement (TwacRStatement), showByte)

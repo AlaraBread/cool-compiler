@@ -27,12 +27,13 @@ showLines trac = unlines (map show trac)
 
 -- some basic newtypes
 newtype Label = Label String
-
-newtype Type = Type String
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
 
 instance Show Label where
   show (Label l) = l
+
+newtype Type = Type String
+  deriving (Eq, Ord, Show)
 
 -- label count (global), temporary count (local)
 data Temporary = Temporary Int Int

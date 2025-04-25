@@ -3,6 +3,7 @@
 
 module Trac where
 
+import Cfg (CfgStatementType (CaseStatement, ConditionalJumpStatement, JumpStatement, LabelStatement, OtherStatement), ControlFlowGraphable (getStatementType))
 import Control.Monad.State
 import qualified Data.Map.Strict as Map
 import Distribution.Simple.Utils (lowercase)
@@ -55,7 +56,7 @@ data TracStatement v
   | TracLabel Label
   | Return v
   | Comment String
-  | ConditionalJump v Label
+  | ConditionalJump v Label Label
   | Assign v v
   | -- The map *must* cover every possible type, as later this gets lowered to a jump table
     -- dst, src, jumptable
@@ -98,11 +99,39 @@ instance (Show v) => Show (TracStatement v) where
     TracLabel l -> "label " ++ show l
     Return a -> "return " ++ show a
     Comment msg -> "comment " ++ msg
-    ConditionalJump a l -> "bt " ++ show a ++ " " ++ show l
+    ConditionalJump a l _ -> "bt " ++ show a ++ " " ++ show l
     Assign a b -> show a ++ " <- " ++ show b
     Case dst src labels -> show dst ++ " <- case " ++ show src ++ " " ++ show labels
     TracInternal internal -> "internal: " ++ show internal
     Abort line reason -> "abort " ++ show line ++ " " ++ show reason
+
+instance ControlFlowGraphable (TracStatement v) where
+  getStatementType s = case s of
+    Add {} -> Cfg.OtherStatement
+    Subtract {} -> Cfg.OtherStatement
+    Multiply {} -> Cfg.OtherStatement
+    Divide {} -> Cfg.OtherStatement
+    LessThan {} -> Cfg.OtherStatement
+    LessThanOrEqualTo {} -> Cfg.OtherStatement
+    Equals {} -> Cfg.OtherStatement
+    IntConstant {} -> Cfg.OtherStatement
+    BoolConstant {} -> Cfg.OtherStatement
+    StringConstant {} -> Cfg.OtherStatement
+    Not {} -> Cfg.OtherStatement
+    Negate {} -> Cfg.OtherStatement
+    New {} -> Cfg.OtherStatement
+    Default {} -> Cfg.OtherStatement
+    IsVoid {} -> Cfg.OtherStatement
+    Dispatch {} -> Cfg.OtherStatement
+    Jump l -> Cfg.JumpStatement l
+    TracLabel l -> Cfg.LabelStatement l
+    Return {} -> Cfg.OtherStatement
+    Comment {} -> Cfg.OtherStatement
+    ConditionalJump _ l l2 -> Cfg.ConditionalJumpStatement l l2
+    Assign {} -> Cfg.OtherStatement
+    Case _ _ labels -> Cfg.CaseStatement (map snd $ Map.toList labels)
+    TracInternal {} -> Cfg.OtherStatement
+    Abort {} -> Cfg.OtherStatement
 
 showBinary :: (Show v) => v -> v -> v -> String -> String
 showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c
@@ -166,12 +195,14 @@ generateTracExpr
               isVoid <- getVariable
               isNotVoid <- getVariable
               isNotVoidLabel <- getLabel
+              isVoidLabel <- getLabel
               pure
                 ( dispatchArgsTrac
                     ++ receiverTrac
                     ++ [ lined' $ IsVoid isVoid receiverV,
                          lined' $ Not isNotVoid isVoid,
-                         lined' $ ConditionalJump isNotVoid isNotVoidLabel,
+                         lined' $ ConditionalJump isNotVoid isNotVoidLabel isVoidLabel,
+                         lined' $ TracLabel isVoidLabel,
                          lined' $ Abort lineNumber DispatchOnVoid,
                          lined' $ TracLabel isNotVoidLabel,
                          lined' $
@@ -201,12 +232,14 @@ generateTracExpr
               isVoid <- getVariable
               isNotVoid <- getVariable
               isNotVoidLabel <- getLabel
+              isVoidLabel <- getLabel
               pure
                 ( dispatchArgsTrac
                     ++ receiverTrac
                     ++ [ lined' $ IsVoid isVoid receiverV,
                          lined' $ Not isNotVoid isVoid,
-                         lined' $ ConditionalJump isNotVoid isNotVoidLabel,
+                         lined' $ ConditionalJump isNotVoid isNotVoidLabel isVoidLabel,
+                         lined' $ TracLabel isVoidLabel,
                          lined' $ Abort lineNumber StaticDispatchOnVoid,
                          lined' $ TracLabel isNotVoidLabel,
                          lined' $
@@ -252,6 +285,7 @@ generateTracExpr
               (trueTrac, trueV) <- generateTracExpr' trueBody
               (falseTrac, falseV) <- generateTracExpr' falseBody
               trueLabel <- getLabel
+              falseLabel <- getLabel
               trueEndLabel <- getLabel
               bodyV <- getVariable
               let trueTrac' =
@@ -267,7 +301,8 @@ generateTracExpr
                          ]
               return
                 ( predicateTrac
-                    ++ [lined ifPredicate $ ConditionalJump predicateV trueLabel]
+                    ++ [lined ifPredicate $ ConditionalJump predicateV trueLabel falseLabel]
+                    ++ [lined' $ TracLabel falseLabel]
                     ++ falseTrac'
                     ++ trueTrac',
                   bodyV
@@ -281,12 +316,14 @@ generateTracExpr
               outV <- getVariable
               whileStart <- getLabel
               endLabel <- getLabel
+              bodyLabel <- getLabel
               notPredicateV <- getVariable
               pure
                 ( [lined whileBody $ TracLabel whileStart]
                     ++ predicateTrac
                     ++ [lined whilePredicate $ Not notPredicateV predicateV]
-                    ++ [lined whilePredicate $ ConditionalJump notPredicateV endLabel]
+                    ++ [lined whilePredicate $ ConditionalJump notPredicateV endLabel bodyLabel]
+                    ++ [lined' $ TracLabel bodyLabel]
                     ++ bodyTrac
                     ++ [lined whilePredicate $ Jump whileStart]
                     ++ [lined whilePredicate $ TracLabel endLabel]
@@ -311,6 +348,7 @@ generateTracExpr
             (bTrac, bV) <- generateTracExpr' b
 
             isNotZeroLabel <- getLabel
+            isZeroLabel <- getLabel
             zero <- getVariable
             isZero <- getVariable
             isNotZero <- getVariable
@@ -322,7 +360,8 @@ generateTracExpr
                   ++ [ lined' $ IntConstant zero 0,
                        lined' $ Equals isZero zero bV,
                        lined' $ Not isNotZero isZero,
-                       lined' $ ConditionalJump isNotZero isNotZeroLabel,
+                       lined' $ ConditionalJump isNotZero isNotZeroLabel isZeroLabel,
+                       lined' $ TracLabel isZeroLabel,
                        lined' $ Abort lineNumber DivisionByZero,
                        lined' $ TracLabel isNotZeroLabel,
                        linedBinary Divide resultV aV bV
@@ -421,11 +460,13 @@ generateTracExpr
             isVoid <- getVariable
             isNotVoid <- getVariable
             isNotVoidLabel <- getLabel
+            isVoidLabel <- getLabel
             pure
               ( caseVariableTrac
                   ++ [ lined' $ IsVoid isVoid caseVariable,
                        lined' $ Not isNotVoid isVoid,
-                       lined' $ ConditionalJump isNotVoid isNotVoidLabel,
+                       lined' $ ConditionalJump isNotVoid isNotVoidLabel isVoidLabel,
+                       lined' $ TracLabel isVoidLabel,
                        lined' $ Abort lineNumber CaseOnVoid,
                        lined' $ TracLabel isNotVoidLabel,
                        lined' $ Case resultVariable caseVariable typeToLabelMap

@@ -1,7 +1,9 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
+
 module Cfg where
 
-import Data.List (foldl')
 import qualified Data.Map.Strict as Map
+import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import Util
 
@@ -17,6 +19,82 @@ data Cfg s v = Cfg
 -- this will reverse the edges and also reverse the statements in cfgBlocks
 reverseCfg :: Cfg s v -> Cfg s v
 reverseCfg = undefined
+
+data CfgStatementType
+  = JumpStatement Label
+  | ConditionalJumpStatement Label Label
+  | LabelStatement Label
+  | CaseStatement [Label]
+  | OtherStatement
+
+class ControlFlowGraphable s where
+  getStatementType :: (s -> CfgStatementType)
+
+constructCfg :: (ControlFlowGraphable s) => [s] -> Cfg s v
+constructCfg (firstStatement : statements) =
+  -- crash if there isnt a label at the start of the list
+  let LabelStatement firstLabel = getStatementType firstStatement
+   in fst $
+        foldl
+          constructCfg'
+          (Cfg Map.empty Map.empty Map.empty, firstLabel)
+          statements
+constructCfg [] = undefined -- crash on empty list
+
+constructCfg' :: (ControlFlowGraphable s) => (Cfg s v, Label) -> s -> (Cfg s v, Label)
+constructCfg' (Cfg blocks children variables, currentLabel) statement =
+  let insertIntoChildren list =
+        Map.insert
+          currentLabel
+          ( Set.fromList list
+              <> fromMaybe Set.empty (Map.lookup currentLabel children)
+          )
+          children
+      blocks' =
+        Map.insert
+          currentLabel
+          ( fromMaybe
+              []
+              (Map.lookup currentLabel blocks)
+              ++ [statement]
+          )
+          blocks
+   in case getStatementType statement of
+        JumpStatement label ->
+          ( Cfg
+              blocks'
+              (insertIntoChildren [label])
+              variables,
+            currentLabel
+          )
+        ConditionalJumpStatement l1 l2 ->
+          ( Cfg
+              blocks'
+              (insertIntoChildren [l1, l2])
+              variables,
+            currentLabel
+          )
+        CaseStatement labels ->
+          ( Cfg
+              blocks'
+              (insertIntoChildren labels)
+              variables,
+            currentLabel
+          )
+        LabelStatement label ->
+          if currentLabel == label
+            then (Cfg blocks' children variables, label)
+            else
+              ( Cfg blocks' (insertIntoChildren [label]) variables,
+                label
+              )
+        OtherStatement ->
+          ( Cfg
+              blocks'
+              children
+              variables, -- todo: include variables in here
+            currentLabel
+          )
 
 class (Eq a) => Lattice a where
   top :: a

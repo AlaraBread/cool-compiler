@@ -1,4 +1,4 @@
-(I reflowed this for you Dr. Kellog, M-q is a cool shortcut :3)
+(I reflowed this for you Dr. Kellogg, M-q is a cool shortcut :3)
 
 Our compiler goes through five IR stages: InputIr, Trac, Twac, TwacR, and
 AssemblyIr.

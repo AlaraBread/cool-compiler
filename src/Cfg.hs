@@ -12,44 +12,45 @@ data Cfg s v = Cfg
     cfgBlocks :: Map.Map Label [s],
     -- a map from labels to child blocks
     cfgChildren :: Map.Map Label (Set.Set Label),
-    -- a map from labels to variables which are contained in them
-    cfgVariables :: Map.Map Label (Set.Set v)
+    -- a map from labels to predecessor blocks
+    cfgPredecessors :: Map.Map Label (Set.Set Label),
+    -- a map from labels to variables which are used in them
+    cfgVariables :: Map.Map Label (Set.Set v),
+    -- map from labels to variables defined in them
+    cfgDefinitions :: Map.Map Label (Set.Set v)
   }
 
 -- this will reverse the edges and also reverse the statements in cfgBlocks
 reverseCfg :: Cfg s v -> Cfg s v
 reverseCfg = undefined
 
-data CfgStatementType
+data CfgStatementType v
   = JumpStatement Label
   | ConditionalJumpStatement Label Label
   | LabelStatement Label
-  | CaseStatement [Label]
-  | OtherStatement
+  | CaseStatement (Set.Set v) (Set.Set v) [Label] Label
+  | -- defined used
+    OtherStatement (Set.Set v) (Set.Set v)
 
-class ControlFlowGraphable s where
-  getStatementType :: (s -> CfgStatementType)
-
-constructCfg :: (ControlFlowGraphable s) => [s] -> Cfg s v
-constructCfg (firstStatement : statements) =
+constructCfg :: (Ord v) => (s -> CfgStatementType v) -> [s] -> Cfg s v
+constructCfg getStatementType (firstStatement : statements) =
   -- crash if there isnt a label at the start of the list
   let LabelStatement firstLabel = getStatementType firstStatement
    in fst $
         foldl
-          constructCfg'
-          (Cfg Map.empty Map.empty Map.empty, firstLabel)
+          (constructCfg' getStatementType)
+          (Cfg Map.empty Map.empty Map.empty Map.empty Map.empty, firstLabel)
           statements
-constructCfg [] = undefined -- crash on empty list
+constructCfg _ [] = undefined -- crash on empty list
 
-constructCfg' :: (ControlFlowGraphable s) => (Cfg s v, Label) -> s -> (Cfg s v, Label)
-constructCfg' (Cfg blocks children variables, currentLabel) statement =
-  let insertIntoChildren list =
+constructCfg' :: (Ord v) => (s -> CfgStatementType v) -> (Cfg s v, Label) -> s -> (Cfg s v, Label)
+constructCfg' getStatementType (Cfg blocks children predecessors variables variablesDefined, currentLabel) statement =
+  let insertIntoChildren parent childList =
         Map.insert
-          currentLabel
-          ( Set.fromList list
+          parent
+          ( Set.fromList childList
               <> fromMaybe Set.empty (Map.lookup currentLabel children)
           )
-          children
       blocks' =
         Map.insert
           currentLabel
@@ -59,40 +60,77 @@ constructCfg' (Cfg blocks children variables, currentLabel) statement =
               ++ [statement]
           )
           blocks
+      insertIntoPredecessors parent childList p =
+        foldl
+          ( \m child ->
+              Map.insert
+                child
+                ( Set.insert parent $
+                    fromMaybe Set.empty (Map.lookup child m)
+                )
+                m
+          )
+          p
+          childList
+      insertIntoVariables vars =
+        Map.insert
+          currentLabel
+          (vars <> fromMaybe Set.empty (Map.lookup currentLabel variables))
    in case getStatementType statement of
         JumpStatement label ->
           ( Cfg
               blocks'
-              (insertIntoChildren [label])
-              variables,
+              (insertIntoChildren currentLabel [label] children)
+              (insertIntoPredecessors currentLabel [label] predecessors)
+              variables
+              variablesDefined,
             currentLabel
           )
         ConditionalJumpStatement l1 l2 ->
           ( Cfg
               blocks'
-              (insertIntoChildren [l1, l2])
-              variables,
+              (insertIntoChildren currentLabel [l1, l2] children)
+              (insertIntoPredecessors currentLabel [l1, l2] predecessors)
+              variables
+              variablesDefined,
             currentLabel
           )
-        CaseStatement labels ->
+        CaseStatement defined used labels afterLabel ->
           ( Cfg
               blocks'
-              (insertIntoChildren labels)
-              variables,
+              ( foldl
+                  (\c l -> insertIntoChildren l [afterLabel] c)
+                  (insertIntoChildren currentLabel labels children)
+                  labels
+              )
+              ( foldl
+                  (\p l -> insertIntoPredecessors l [afterLabel] p)
+                  (insertIntoPredecessors currentLabel labels predecessors)
+                  labels
+              )
+              (insertIntoVariables used variables)
+              (insertIntoVariables defined variablesDefined),
             currentLabel
           )
         LabelStatement label ->
           if currentLabel == label
-            then (Cfg blocks' children variables, label)
+            then (Cfg blocks' children predecessors variables variablesDefined, label)
             else
-              ( Cfg blocks' (insertIntoChildren [label]) variables,
+              ( Cfg
+                  blocks'
+                  (insertIntoChildren currentLabel [label] children)
+                  (insertIntoPredecessors currentLabel [label] predecessors)
+                  variables
+                  variablesDefined,
                 label
               )
-        OtherStatement ->
+        OtherStatement defined used ->
           ( Cfg
               blocks'
               children
-              variables, -- todo: include variables in here
+              predecessors
+              (insertIntoVariables used variables)
+              (insertIntoVariables defined variablesDefined),
             currentLabel
           )
 

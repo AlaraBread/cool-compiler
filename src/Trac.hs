@@ -1,11 +1,14 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TupleSections #-}
 
 module Trac where
 
-import Cfg (CfgStatementType (CaseStatement, ConditionalJumpStatement, JumpStatement, LabelStatement, OtherStatement), ControlFlowGraphable (getStatementType))
+import Cfg (CfgStatementType (CaseStatement, ConditionalJumpStatement, JumpStatement, LabelStatement, OtherStatement))
 import Control.Monad.State
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import Distribution.Simple.Utils (lowercase)
 import InputIr (Method (methodFormals))
 import qualified InputIr
@@ -60,7 +63,7 @@ data TracStatement v
   | Assign v v
   | -- The map *must* cover every possible type, as later this gets lowered to a jump table
     -- dst, src, jumptable
-    Case v v (Map.Map Type Label)
+    Case v v (Map.Map Type Label) Label
   | TracInternal InputIr.Internal
   | Abort Int (AbortReason v)
 
@@ -101,37 +104,42 @@ instance (Show v) => Show (TracStatement v) where
     Comment msg -> "comment " ++ msg
     ConditionalJump a l _ -> "bt " ++ show a ++ " " ++ show l
     Assign a b -> show a ++ " <- " ++ show b
-    Case dst src labels -> show dst ++ " <- case " ++ show src ++ " " ++ show labels
+    Case dst src labels _ -> show dst ++ " <- case " ++ show src ++ " " ++ show labels
     TracInternal internal -> "internal: " ++ show internal
     Abort line reason -> "abort " ++ show line ++ " " ++ show reason
 
-instance ControlFlowGraphable (TracStatement v) where
-  getStatementType s = case s of
-    Add {} -> Cfg.OtherStatement
-    Subtract {} -> Cfg.OtherStatement
-    Multiply {} -> Cfg.OtherStatement
-    Divide {} -> Cfg.OtherStatement
-    LessThan {} -> Cfg.OtherStatement
-    LessThanOrEqualTo {} -> Cfg.OtherStatement
-    Equals {} -> Cfg.OtherStatement
-    IntConstant {} -> Cfg.OtherStatement
-    BoolConstant {} -> Cfg.OtherStatement
-    StringConstant {} -> Cfg.OtherStatement
-    Not {} -> Cfg.OtherStatement
-    Negate {} -> Cfg.OtherStatement
-    New {} -> Cfg.OtherStatement
-    Default {} -> Cfg.OtherStatement
-    IsVoid {} -> Cfg.OtherStatement
-    Dispatch {} -> Cfg.OtherStatement
-    Jump l -> Cfg.JumpStatement l
-    TracLabel l -> Cfg.LabelStatement l
-    Return {} -> Cfg.OtherStatement
-    Comment {} -> Cfg.OtherStatement
-    ConditionalJump _ l l2 -> Cfg.ConditionalJumpStatement l l2
-    Assign {} -> Cfg.OtherStatement
-    Case _ _ labels -> Cfg.CaseStatement (map snd $ Map.toList labels)
-    TracInternal {} -> Cfg.OtherStatement
-    Abort {} -> Cfg.OtherStatement
+getTracStatementType :: (Ord v) => TracStatement v -> CfgStatementType v
+getTracStatementType s =
+  let binary a b c = Cfg.OtherStatement (Set.singleton a) (Set.fromList [b, c])
+      unary a b = Cfg.OtherStatement (Set.singleton a) (Set.singleton b)
+      constant a = Cfg.OtherStatement (Set.singleton a) Set.empty
+   in case s of
+        Add a b c -> binary a b c
+        Subtract a b c -> binary a b c
+        Multiply a b c -> binary a b c
+        Divide a b c -> binary a b c
+        LessThan a b c -> binary a b c
+        LessThanOrEqualTo a b c -> binary a b c
+        Equals a b c -> binary a b c
+        IntConstant a _ -> constant a
+        BoolConstant a _ -> constant a
+        StringConstant a _ -> constant a
+        Not a b -> unary a b
+        Negate a b -> unary a b
+        New a _ -> constant a
+        Default a _ -> constant a
+        IsVoid a b -> unary a b
+        Dispatch {dispatchResult, dispatchArgs, dispatchReceiver} ->
+          Cfg.OtherStatement (Set.singleton dispatchResult) (Set.fromList $ dispatchReceiver : dispatchArgs)
+        Jump l -> Cfg.JumpStatement l
+        TracLabel l -> Cfg.LabelStatement l
+        Return a -> Cfg.OtherStatement Set.empty (Set.singleton a)
+        Comment {} -> Cfg.OtherStatement Set.empty Set.empty
+        ConditionalJump _ l l2 -> Cfg.ConditionalJumpStatement l l2
+        Assign a b -> unary a b
+        Case a b labels afterLabel -> Cfg.CaseStatement (Set.singleton a) (Set.singleton b) (map snd $ Map.toList labels) afterLabel
+        TracInternal {} -> Cfg.OtherStatement Set.empty Set.empty
+        Abort {} -> Cfg.OtherStatement Set.empty Set.empty
 
 showBinary :: (Show v) => v -> v -> v -> String -> String
 showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c
@@ -461,6 +469,7 @@ generateTracExpr
             isNotVoid <- getVariable
             isNotVoidLabel <- getLabel
             isVoidLabel <- getLabel
+            afterCase <- getLabel
             pure
               ( caseVariableTrac
                   ++ [ lined' $ IsVoid isVoid caseVariable,
@@ -469,7 +478,8 @@ generateTracExpr
                        lined' $ TracLabel isVoidLabel,
                        lined' $ Abort lineNumber CaseOnVoid,
                        lined' $ TracLabel isNotVoidLabel,
-                       lined' $ Case resultVariable caseVariable typeToLabelMap
+                       lined' $ Case resultVariable caseVariable typeToLabelMap afterCase,
+                       lined' $ TracLabel afterCase
                      ]
                   ++ trac
                   ++ abortCode

@@ -124,7 +124,7 @@ generateTwacStatement tracStatement = case tracStatement of
   Trac.Comment c -> pure [Comment c]
   Trac.ConditionalJump v l _ -> pure [ConditionalJump v l]
   Trac.Assign dst src -> pure [Assign src dst]
-  Trac.Case _ caseVariable jumpTable -> pure [TwacCase caseVariable jumpTable]
+  Trac.Case _ caseVariable jumpTable _ -> pure [TwacCase caseVariable jumpTable]
   Trac.TracInternal internal -> pure [TwacInternal internal]
   Trac.Abort line reason -> pure [Abort line reason]
 

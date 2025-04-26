@@ -41,6 +41,7 @@ data Temporary = Temporary Int Int
 
 -- keep track of numbers
 data Variable = TemporaryV Int | ParameterV Int | AttributeV Int
+  deriving (Eq, Ord)
 
 instance Show Variable where
   show (TemporaryV t) = "temp#" ++ show t

@@ -24,3 +24,4 @@ executable coolcompiler
   other-modules: InputIrParser
   other-modules: Cfg
   other-modules: Assembly
+  other-modules: Ssa

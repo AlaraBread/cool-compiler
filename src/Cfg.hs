@@ -8,7 +8,8 @@ import qualified Data.Set as Set
 import Util
 
 data Cfg s v = Cfg
-  { -- a map from labels to blocks in the Cfg
+  { cfgStart :: Label,
+    -- a map from labels to blocks in the Cfg
     cfgBlocks :: Map.Map Label [s],
     -- a map from labels to child blocks
     cfgChildren :: Map.Map Label (Set.Set Label),
@@ -39,12 +40,12 @@ constructCfg getStatementType (firstStatement : statements) =
    in fst $
         foldl
           (constructCfg' getStatementType)
-          (Cfg Map.empty Map.empty Map.empty Map.empty Map.empty, firstLabel)
+          (Cfg firstLabel Map.empty Map.empty Map.empty Map.empty Map.empty, firstLabel)
           statements
 constructCfg _ [] = undefined -- crash on empty list
 
 constructCfg' :: (Ord v) => (s -> CfgStatementType v) -> (Cfg s v, Label) -> s -> (Cfg s v, Label)
-constructCfg' getStatementType (Cfg blocks children predecessors variables variablesDefined, currentLabel) statement =
+constructCfg' getStatementType (Cfg startLabel blocks children predecessors variables variablesDefined, currentLabel) statement =
   let insertIntoChildren parent childList =
         Map.insert
           parent
@@ -79,6 +80,7 @@ constructCfg' getStatementType (Cfg blocks children predecessors variables varia
    in case getStatementType statement of
         JumpStatement label ->
           ( Cfg
+              startLabel
               blocks'
               (insertIntoChildren currentLabel [label] children)
               (insertIntoPredecessors currentLabel [label] predecessors)
@@ -88,6 +90,7 @@ constructCfg' getStatementType (Cfg blocks children predecessors variables varia
           )
         ConditionalJumpStatement l1 l2 ->
           ( Cfg
+              startLabel
               blocks'
               (insertIntoChildren currentLabel [l1, l2] children)
               (insertIntoPredecessors currentLabel [l1, l2] predecessors)
@@ -97,6 +100,7 @@ constructCfg' getStatementType (Cfg blocks children predecessors variables varia
           )
         CaseStatement defined used labels afterLabel ->
           ( Cfg
+              startLabel
               blocks'
               ( foldl
                   (\c l -> insertIntoChildren l [afterLabel] c)
@@ -114,9 +118,10 @@ constructCfg' getStatementType (Cfg blocks children predecessors variables varia
           )
         LabelStatement label ->
           if currentLabel == label
-            then (Cfg blocks' children predecessors variables variablesDefined, label)
+            then (Cfg startLabel blocks' children predecessors variables variablesDefined, label)
             else
               ( Cfg
+                  startLabel
                   blocks'
                   (insertIntoChildren currentLabel [label] children)
                   (insertIntoPredecessors currentLabel [label] predecessors)
@@ -126,6 +131,7 @@ constructCfg' getStatementType (Cfg blocks children predecessors variables varia
               )
         OtherStatement defined used ->
           ( Cfg
+              startLabel
               blocks'
               children
               predecessors

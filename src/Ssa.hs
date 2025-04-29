@@ -3,7 +3,7 @@
 module Ssa where
 
 import Cfg (Cfg (..))
-import Data.Foldable (find)
+import Data.Foldable (Foldable (foldl'), find)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe, isJust)
 import qualified Data.Set as Set
@@ -13,17 +13,40 @@ import Util (Label, Variable)
 data SsaVariable = SsaVariable Variable Int
 
 generateSsa :: Cfg (TracStatement Variable) Variable -> Cfg (TracStatement SsaVariable) SsaVariable
-generateSsa = undefined
+generateSsa cfg =
+  let dom = reverseMap $ dominanceFrontiers cfg
+      Cfg {cfgStart, cfgBlocks, cfgChildren, cfgPredecessors, cfgDefinitions} = cfg
+      phi = foldl' (\phi' a -> phi' <> cfgDefinitions Map.! a) Set.empty <$> dom
+      cfgBlocks' = undefined
+      cfgVariables' = undefined
+      cfgDefinitions' = undefined
+   in Cfg cfgStart cfgBlocks' cfgChildren cfgPredecessors cfgVariables' cfgDefinitions'
+
+reverseMap :: (Ord a, Ord b) => Map.Map a (Set.Set b) -> Map.Map b (Set.Set a)
+reverseMap =
+  Map.foldlWithKey'
+    ( \m k v ->
+        foldl'
+          ( \m' v' ->
+              Map.insert
+                v'
+                (Set.insert k $ fromMaybe Set.empty $ Map.lookup v' m)
+                m'
+          )
+          m
+          v
+    )
+    Map.empty
 
 -- Cooper, Keith D., Harvey, Timothy J. and Kennedy, Ken. "A simple, fast dominance algorithm."
 dominanceFrontiers :: Cfg s v -> Map.Map Label (Set.Set Label)
 dominanceFrontiers cfg =
   let idoms = idom cfg
-   in Map.foldlWithKey
+   in Map.foldlWithKey'
         ( \frontiers b bPredecessors ->
             if length bPredecessors >= 2
               then
-                foldl
+                foldl'
                   (\frontiers' p -> dominanceFrontiers' idoms p b frontiers')
                   frontiers
                   bPredecessors
@@ -68,12 +91,12 @@ idom' predecessors nodes nodeOrdering changed idoms
   | not changed = idoms
   | otherwise =
       let (idoms', changed') =
-            foldl
+            foldl'
               ( \(idoms'', changed'') b ->
                   let preds = predecessors Map.! b
                       firstPred = fromJust $ find (\i -> isJust $ Map.lookup i idoms'') preds
                       newIdom =
-                        foldl
+                        foldl'
                           ( \newIdom' p ->
                               if isJust $ Map.lookup p idoms''
                                 then intersect idoms'' nodeOrdering p newIdom'

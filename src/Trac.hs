@@ -66,6 +66,7 @@ data TracStatement v
     Case v v (Map.Map Type Label) Label
   | TracInternal InputIr.Internal
   | Abort Int (AbortReason v)
+  | Phi v (Set.Set v)
 
 data AbortReason v
   = DispatchOnVoid

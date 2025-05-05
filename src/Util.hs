@@ -3,6 +3,10 @@
 module Util where
 
 import Control.Monad.State (MonadState (state), State)
+import Data.Foldable (foldl')
+import qualified Data.Map as Map
+import Data.Maybe (fromMaybe)
+import qualified Data.Set as Set
 
 -- So we can keep track of line numbers.
 data Lined a = Lined {line :: !Int, item :: !a}
@@ -53,3 +57,19 @@ getVariable = state $ \(Temporary l t) -> (TemporaryV $ t + 1, Temporary l $ t +
 
 getLabel :: State Temporary Label
 getLabel = state $ \(Temporary l t) -> (Label $ "l" ++ show (l + 1), Temporary (l + 1) t)
+
+reverseMap :: (Ord a, Ord b) => Map.Map a (Set.Set b) -> Map.Map b (Set.Set a)
+reverseMap =
+  Map.foldlWithKey'
+    ( \m k v ->
+        foldl'
+          ( \m' v' ->
+              Map.insert
+                v'
+                (Set.insert k $ fromMaybe Set.empty $ Map.lookup v' m)
+                m'
+          )
+          m
+          v
+    )
+    Map.empty

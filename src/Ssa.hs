@@ -3,40 +3,76 @@
 module Ssa where
 
 import Cfg (Cfg (..))
+import Control.Monad.State
 import Data.Foldable (Foldable (foldl'), find)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe, isJust)
 import qualified Data.Set as Set
 import Trac (TracStatement)
-import Util (Label, Variable)
+import Util (Label, Variable, reverseMap)
 
 data SsaVariable = SsaVariable Variable Int
 
 generateSsa :: Cfg (TracStatement Variable) Variable -> Cfg (TracStatement SsaVariable) SsaVariable
 generateSsa cfg =
-  let dom = reverseMap $ dominanceFrontiers cfg
-      Cfg {cfgStart, cfgBlocks, cfgChildren, cfgPredecessors, cfgDefinitions} = cfg
-      phi = foldl' (\phi' a -> phi' <> cfgDefinitions Map.! a) Set.empty <$> dom
+  let domFrontiers = dominanceFrontiers cfg
+      Cfg {cfgStart, cfgBlocks, cfgChildren, cfgPredecessors, cfgVariables, cfgDefinitions} = cfg
+      domTree = Map.insert cfgStart Set.empty (reverseMap $ Map.map Set.singleton $ idom cfg)
+      revVariableDefinitions = reverseMap cfgDefinitions
+      phiFunctions = calculatePhiFunctions domFrontiers revVariableDefinitions
       cfgBlocks' = undefined
       cfgVariables' = undefined
       cfgDefinitions' = undefined
    in Cfg cfgStart cfgBlocks' cfgChildren cfgPredecessors cfgVariables' cfgDefinitions'
 
-reverseMap :: (Ord a, Ord b) => Map.Map a (Set.Set b) -> Map.Map b (Set.Set a)
-reverseMap =
+calculatePhiFunctions ::
+  Map.Map Label (Set.Set Label) ->
+  Map.Map Variable (Set.Set Label) ->
+  Map.Map Label (Set.Set Variable)
+calculatePhiFunctions domFrontiers =
   Map.foldlWithKey'
-    ( \m k v ->
+    ( \p variable blocks ->
         foldl'
-          ( \m' v' ->
-              Map.insert
-                v'
-                (Set.insert k $ fromMaybe Set.empty $ Map.lookup v' m)
-                m'
+          ( \p' block ->
+              foldl'
+                ( \p'' k ->
+                    Map.insert
+                      k
+                      (Set.insert variable $ fromMaybe Set.empty $ Map.lookup block p'')
+                      p''
+                )
+                p'
+                (domFrontiers Map.! block)
           )
-          m
-          v
+          p
+          blocks
     )
     Map.empty
+
+-- https://ics.uci.edu/~yeouln/course/ssa.pdf
+rename ::
+  Label ->
+  Map.Map Label (Set.Set Variable) ->
+  Map.Map Label (Set.Set Label) ->
+  Map.Map Variable SsaVariable ->
+  Map.Map Label (Map.Map SsaVariable (Set.Set SsaVariable)) ->
+  State (Map.Map Variable Int) (Map.Map Label (Map.Map SsaVariable (Set.Set SsaVariable)))
+rename block phiFunctionVariables domTree currentDefinitions phiFunctions =
+  do
+    let phiFunctionVariablesForBlock = phiFunctionVariables Map.! block
+    phiFunctionsForBlock <-
+      traverse
+        ( \v -> do
+            v' <- genName v
+
+            pure undefined
+        )
+        phiFunctionVariablesForBlock
+    let phiFunctions' = Map.insert block phiFunctionsForBlock phiFunctions
+    pure phiFunctions'
+
+genName :: Variable -> State (Map.Map Variable Int) SsaVariable
+genName = undefined
 
 -- Cooper, Keith D., Harvey, Timothy J. and Kennedy, Ken. "A simple, fast dominance algorithm."
 dominanceFrontiers :: Cfg s v -> Map.Map Label (Set.Set Label)
@@ -86,7 +122,13 @@ idom (Cfg {cfgStart, cfgPredecessors}) =
       orderingMap = Map.fromList [(n, i) | n <- ordering'', i <- [0 :: Int ..]]
    in idom' cfgPredecessors ordering'' orderingMap True (Map.singleton cfgStart cfgStart)
 
-idom' :: Map.Map Label (Set.Set Label) -> [Label] -> Map.Map Label Int -> Bool -> Map.Map Label Label -> Map.Map Label Label
+idom' ::
+  Map.Map Label (Set.Set Label) ->
+  [Label] ->
+  Map.Map Label Int ->
+  Bool ->
+  Map.Map Label Label ->
+  Map.Map Label Label
 idom' predecessors nodes nodeOrdering changed idoms
   | not changed = idoms
   | otherwise =

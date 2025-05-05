@@ -460,7 +460,8 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
               Type "SELF_TYPE" ->
                 pure $
                   instOnly
-                    [ Push TwacR.Rdi,
+                    [ SubtractImmediate64 8 TwacR.Rsp,
+                      Push TwacR.Rdi,
                       Load (sizeAddress TwacR.R15) TwacR.Rdi,
                       LoadConst 1 TwacR.Rsi,
                       Call $ Label "calloc",
@@ -475,7 +476,8 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                       CallAddress (vTableMethodAddress r1 0),
                       Load (Address (Just 8) TwacR.Rsp Nothing Nothing) TwacR.Rdi,
                       Transfer TwacR.Rdi dst,
-                      Pop TwacR.Rdi
+                      Pop TwacR.Rdi,
+                      AddImmediate64 8 TwacR.Rsp
                     ]
               Type typeName ->
                 let TypeDetails tag size _ = typeDetailsMap Map.! type'

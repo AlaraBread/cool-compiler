@@ -718,7 +718,11 @@ inInt typeDetailsMap =
       overflowLabel = Label "in_int_overflow"
       noOverflowLabel = Label "in_int_no_overflow"
       TypeDetails tag size _ = typeDetailsMap Map.! Type "Int"
-   in ( [AssemblyLabel $ Label "in_int"]
+   in ( [ AssemblyLabel $ Label "in_int",
+          -- keep the stack 16-byte aligned and give space for the char **
+          -- and int * for getline
+          SubtractImmediate64 24 TwacR.Rsp
+        ]
           -- since we calloc, the integer starts at zero
           ++ callocWords size
           ++ [ StoreConst (size * 8) (sizeAddress TwacR.Rax),
@@ -726,9 +730,6 @@ inInt typeDetailsMap =
                LoadLabel (Label "Int..vtable") TwacR.R10,
                Store TwacR.R10 (vTableAddress TwacR.Rax),
                Transfer TwacR.Rax TwacR.R14,
-               -- keep the stack 16-byte aligned and give space for the char **
-               -- and int * for getline
-               SubtractImmediate64 24 TwacR.Rsp,
                Lea (Address (Just 16) TwacR.Rsp Nothing Nothing) TwacR.Rdi, -- char **
                StoreConst 0 (Address (Just 16) TwacR.Rsp Nothing Nothing),
                Lea (Address (Just 8) TwacR.Rsp Nothing Nothing) TwacR.Rsi, -- size_t * (size)

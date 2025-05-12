@@ -183,13 +183,14 @@ runAi' :: (Ai s v a, Ord v) => Set.Set Label -> Cfg s v -> Map.Map v a -> Map.Ma
 runAi' workList cfg estimates variableMap =
   let (label, workList') = Set.deleteFindMin workList
       statements = cfgBlocks cfg Map.! label
+      (estimates', workList'') =
+        List.foldl'
+          (runAiStep variableMap)
+          (estimates, workList')
+          statements
    in if null workList
         then (estimates, Set.empty)
-        else
-          List.foldl'
-            (runAiStep variableMap)
-            (estimates, workList')
-            statements
+        else runAi' workList'' cfg estimates' variableMap
 
 runAi :: (Ai s v a, Lattice a, Ord v) => Cfg s v -> Map.Map v a
 runAi cfg =

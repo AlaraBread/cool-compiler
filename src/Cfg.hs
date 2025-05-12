@@ -2,6 +2,8 @@
 
 module Cfg where
 
+import Data.Foldable (Foldable (toList))
+import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
@@ -155,27 +157,43 @@ class (Lattice a) => Ai s v a where
   -- initial estimates, the statement, new estimates and the variables we touched
   transferFunction :: Map.Map v a -> s -> (Map.Map v a, Set.Set v)
 
-invertMap :: Map.Map k (Set.Set v) -> Map.Map v (Set.Set k)
-invertMap = undefined
+invertMap :: (Ord k, Ord v) => Map.Map k (Set.Set v) -> Map.Map v (Set.Set k)
+invertMap originalMap =
+  Map.fromListWith Set.union $
+    concatMap (\(k, set) -> (,Set.singleton k) <$> Set.toList set) $
+      Map.toList originalMap
 
--- Map.fromList $ map (,bottom) $ concat $ Map.elems $ cfgVariables cfg
 buildInitialEstimates :: (Lattice a, Ord v) => Cfg s v -> Map.Map v a
-buildInitialEstimates cfg = undefined
+buildInitialEstimates cfg =
+  Map.fromList $
+    map (,bottom) $
+      concatMap Set.toList $
+        Map.elems $
+          cfgVariables cfg
 
 initialWorkList :: Cfg s v -> Set.Set Label
 initialWorkList cfg = Set.fromList $ Map.keys $ cfgBlocks cfg
 
-runAi' :: Set.Set Label -> Cfg s v -> Map.Map v a -> Map.Map v (Set.Set Label) -> (Set.Set Label, Map.Map v a)
+runAiStep :: (Ai s v a, Ord v) => Map.Map v (Set.Set Label) -> (Map.Map v a, Set.Set Label) -> s -> (Map.Map v a, Set.Set Label)
+runAiStep variableMap (estimates, workList) statement =
+  let (estimates', affectedVariables) = transferFunction estimates statement
+   in (estimates', Set.unions $ Set.map (variableMap Map.!) affectedVariables)
+
+runAi' :: (Ai s v a, Ord v) => Set.Set Label -> Cfg s v -> Map.Map v a -> Map.Map v (Set.Set Label) -> (Map.Map v a, Set.Set Label)
 runAi' workList cfg estimates variableMap =
-  let (label, workList) = Set.deleteFindMin workList
-      statements = Map.lookup label (cfgBlocks cfg)
+  let (label, workList') = Set.deleteFindMin workList
+      statements = cfgBlocks cfg Map.! label
    in if null workList
-        then (Set.empty, estimates)
-        else undefined -- TODO: actually recurse...
+        then (estimates, Set.empty)
+        else
+          List.foldl'
+            (runAiStep variableMap)
+            (estimates, workList')
+            statements
 
 runAi :: (Ai s v a, Lattice a, Ord v) => Cfg s v -> Map.Map v a
 runAi cfg =
   let workList = initialWorkList cfg
       estimates = buildInitialEstimates cfg
       variableMap = invertMap $ cfgVariables cfg
-   in snd $ runAi' workList cfg estimates variableMap
+   in fst $ runAi' workList cfg estimates variableMap

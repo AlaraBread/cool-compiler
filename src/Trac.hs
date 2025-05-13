@@ -5,7 +5,6 @@
 
 module Trac where
 
-import Cfg (CfgStatementType (CaseStatement, ConditionalJumpStatement, JumpStatement, LabelStatement, OtherStatement))
 import Control.Monad.State
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set

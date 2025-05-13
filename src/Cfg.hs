@@ -260,7 +260,7 @@ initialWorkList cfg = Set.fromList $ Map.keys $ cfgBlocks cfg
 
 runAiStep ::
   (Ai s v a, Ord v) =>
-  Map.Map v (Set.Set Label) ->
+  Map.Map v (Set.Set Label) -> -- variable map
   ([Lined (s, Map.Map v (a, a))], Map.Map v a, Set.Set Label) -> -- processed statements, before state, worklist
   Lined (s, Map.Map v (a, a)) -> -- statement
   ([Lined (s, Map.Map v (a, a))], Map.Map v a, Set.Set Label) -- processed statements, after state, worklist
@@ -277,11 +277,17 @@ runAi' ::
   Set.Set Label ->
   AnnotatedCfg s v a ->
   Map.Map v (Set.Set Label) ->
+  Map.Map v a ->
   (AnnotatedCfg s v a, Set.Set Label)
-runAi' workList cfg variableMap =
+runAi' workList cfg variableMap bottomEstimates =
   let (label, workList') = Set.deleteFindMin workList
       statements = cfgBlocks cfg Map.! label
-      initialState = fmap snd $ snd $ item $ head statements
+      -- we compute the initial state by taking the lub of the end estimates of
+      -- all of the predecessors and the estimate of all bottoms, in case there
+      -- are no predecessors.
+      predecessors = Set.toList $ cfgPredecessors cfg Map.! label
+      predEndEstimates = fmap (fmap snd . snd . item . last . (cfgBlocks cfg Map.!)) predecessors
+      initialState = Map.unionsWith join (bottomEstimates : predEndEstimates)
       (statementsReverse', _, workList'') =
         List.foldl'
           (runAiStep variableMap)
@@ -291,13 +297,14 @@ runAi' workList cfg variableMap =
       cfgBlocks' = Map.insert label statements' (cfgBlocks cfg)
    in if null workList
         then (cfg, Set.empty)
-        else runAi' workList'' (cfg {cfgBlocks = cfgBlocks'}) variableMap
+        else runAi' workList'' (cfg {cfgBlocks = cfgBlocks'}) variableMap bottomEstimates
 
 -- we add a set of estimates after every statement. this covers every program
 -- point because all blocks start with a Label.
 runAi :: (Ai s v a, Lattice a, Ord v) => Cfg s v -> AnnotatedCfg s v a
 runAi cfg =
   let workList = initialWorkList cfg
+      bottomEstimates = snd <$> buildInitialEstimates cfg
       cfg' = buildInitialEstimatesCfg cfg
       variableMap = invertMap $ cfgVariables cfg
-   in fst $ runAi' workList cfg' variableMap
+   in fst $ runAi' workList cfg' variableMap bottomEstimates

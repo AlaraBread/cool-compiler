@@ -5,7 +5,7 @@ module TwacR where
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import InputIr (ImplementationMapEntry)
-import Trac (AbortReason (..), TypeDetailsMap)
+import TracIr (AbortReason (..))
 import Twac
 import Util
 

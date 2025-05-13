@@ -7,6 +7,7 @@ import qualified Data.Map.Strict as Map
 import InputIr (Formal)
 import qualified InputIr
 import qualified Trac
+import qualified TracIr
 import Util
 
 type Twac v = [Lined (TwacStatement v)]
@@ -47,12 +48,12 @@ data TwacStatement v
   | Assign v v
   | Copy v v
   | TwacCase v (Map.Map Type Label)
-  | Abort Int (Trac.AbortReason v)
+  | Abort Int (TracIr.AbortReason v)
   | TwacInternal InputIr.Internal
 
 data TwacIr v = TwacIr
   { implementationMap :: Map.Map Type [InputIr.ImplementationMapEntry (TwacMethod v)],
-    typeDetails :: Trac.TypeDetailsMap
+    typeDetails :: TypeDetailsMap
   }
 
 data TwacMethod v = TwacMethod {methodName :: String, body :: Twac v, formals :: [Formal], temporaryCount :: Int}
@@ -100,51 +101,51 @@ generateBinaryStatement :: (v -> v -> TwacStatement v) -> v -> v -> v -> [TwacSt
 generateBinaryStatement op dst src1 src2 =
   [Copy src1 dst, op src2 dst]
 
-generateTwacStatement :: Trac.TracStatement v -> State Temporary [TwacStatement v]
+generateTwacStatement :: TracIr.TracStatement v -> State Temporary [TwacStatement v]
 generateTwacStatement tracStatement = case tracStatement of
-  Trac.Add dst src1 src2 -> pure $ generateBinaryStatement Add dst src1 src2
-  Trac.Subtract dst src1 src2 -> pure $ generateBinaryStatement Subtract dst src1 src2
-  Trac.Multiply dst src1 src2 -> pure $ generateBinaryStatement Multiply dst src1 src2
-  Trac.Divide dst src1 src2 -> pure $ generateBinaryStatement Divide dst src1 src2
-  Trac.LessThan dst src1 src2 -> pure [LessThan src1 src2 dst]
-  Trac.LessThanOrEqualTo dst src1 src2 -> pure [LessThanOrEqualTo src1 src2 dst]
-  Trac.Equals dst src1 src2 -> pure [Equals src1 src2 dst]
-  Trac.IntConstant var i -> pure [IntConstant i var]
-  Trac.BoolConstant var i -> pure [BoolConstant i var]
-  Trac.StringConstant var i -> pure [StringConstant i var]
-  Trac.Not dst src -> pure $ generateUnaryStatement Not dst src
-  Trac.Negate dst src -> pure $ generateUnaryStatement Negate dst src
-  Trac.New dst type' -> pure [New type' dst]
-  Trac.Default dst type' -> pure [Default type' dst]
-  Trac.IsVoid dst src -> pure $ generateUnaryStatement IsVoid dst src
-  Trac.Dispatch res rec recType t m as -> pure [Dispatch res rec recType t m as]
-  Trac.Jump l -> pure [Jump l]
-  Trac.TracLabel l -> pure [TwacLabel l]
-  Trac.Return v -> pure [Return v]
-  Trac.Comment c -> pure [Comment c]
-  Trac.ConditionalJump v l _ -> pure [ConditionalJump v l]
-  Trac.Assign dst src -> pure [Assign src dst]
-  Trac.Case _ caseVariable jumpTable _ -> pure [TwacCase caseVariable jumpTable]
-  Trac.TracInternal internal -> pure [TwacInternal internal]
-  Trac.Abort line reason -> pure [Abort line reason]
+  TracIr.Add dst src1 src2 -> pure $ generateBinaryStatement Add dst src1 src2
+  TracIr.Subtract dst src1 src2 -> pure $ generateBinaryStatement Subtract dst src1 src2
+  TracIr.Multiply dst src1 src2 -> pure $ generateBinaryStatement Multiply dst src1 src2
+  TracIr.Divide dst src1 src2 -> pure $ generateBinaryStatement Divide dst src1 src2
+  TracIr.LessThan dst src1 src2 -> pure [LessThan src1 src2 dst]
+  TracIr.LessThanOrEqualTo dst src1 src2 -> pure [LessThanOrEqualTo src1 src2 dst]
+  TracIr.Equals dst src1 src2 -> pure [Equals src1 src2 dst]
+  TracIr.IntConstant var i -> pure [IntConstant i var]
+  TracIr.BoolConstant var i -> pure [BoolConstant i var]
+  TracIr.StringConstant var i -> pure [StringConstant i var]
+  TracIr.Not dst src -> pure $ generateUnaryStatement Not dst src
+  TracIr.Negate dst src -> pure $ generateUnaryStatement Negate dst src
+  TracIr.New dst type' -> pure [New type' dst]
+  TracIr.Default dst type' -> pure [Default type' dst]
+  TracIr.IsVoid dst src -> pure $ generateUnaryStatement IsVoid dst src
+  TracIr.Dispatch res rec recType t m as -> pure [Dispatch res rec recType t m as]
+  TracIr.Jump l -> pure [Jump l]
+  TracIr.TracLabel l -> pure [TwacLabel l]
+  TracIr.Return v -> pure [Return v]
+  TracIr.Comment c -> pure [Comment c]
+  TracIr.ConditionalJump v l _ -> pure [ConditionalJump v l]
+  TracIr.Assign dst src -> pure [Assign src dst]
+  TracIr.Case _ caseVariable jumpTable _ -> pure [TwacCase caseVariable jumpTable]
+  TracIr.TracInternal internal -> pure [TwacInternal internal]
+  TracIr.Abort line reason -> pure [Abort line reason]
 
 -- I cannot tell if this is the most beautiful or the most ugly code I have
 -- written. I think I am leaning towards the most ugly. This is hyperbole of
 -- course, but it's... certainly something. Honestly, I constructed it through
 -- iterating away type errors.
-tracToTwac :: Trac.Trac v -> State Temporary (Twac v)
+tracToTwac :: TracIr.Trac v -> State Temporary (Twac v)
 tracToTwac trac =
   concatMap unsequence <$> mapM (mapM generateTwacStatement) trac
 
-generateTwacMethod :: Trac.TracMethod Variable -> State Temporary (TwacMethod Variable)
-generateTwacMethod (Trac.TracMethod methodName body formals temporaryCount) = do
+generateTwacMethod :: TracIr.TracMethod Variable -> State Temporary (TwacMethod Variable)
+generateTwacMethod (TracIr.TracMethod methodName body formals temporaryCount) = do
   modify (\(Temporary label _) -> Temporary label temporaryCount)
   body' <- tracToTwac body
   temporaryCount' <- gets (\(Temporary _ temporary) -> temporary)
   pure $ TwacMethod methodName body' formals temporaryCount'
 
-generateTwac :: Trac.TracIr Variable -> Temporary -> (TwacIr Variable, Temporary)
-generateTwac (Trac.TracIr impMap typeDetailsMap) =
+generateTwac :: TracIr.TracIr Variable -> Temporary -> (TwacIr Variable, Temporary)
+generateTwac (TracIr.TracIr impMap typeDetailsMap) =
   runState $
     TwacIr
       <$> traverse (traverse (traverse generateTwacMethod)) impMap

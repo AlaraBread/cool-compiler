@@ -197,9 +197,9 @@ advantages:
 ===========
 InputIr
 => Trac Variable
-=> Trac SsaVariable
-=> Cfg Trac
-=> Cfg [TwacStatement]
+=> Cfg (Trac Variable)
+=> Cfg (Trac SsaVariable)
+=> Cfg (Twac SsaVariable)
 => Cfg (AssemblyIr SsaVariable)
 => Cfg (AssemblyIr Register)
 => AssemblyIr Register

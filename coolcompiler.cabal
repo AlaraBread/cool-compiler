@@ -20,6 +20,7 @@ executable coolcompiler
   other-modules: TwacR
   other-modules: Twac
   other-modules: Trac
+  other-modules: TracIr
   other-modules: InputIr
   other-modules: InputIrParser
   other-modules: Cfg

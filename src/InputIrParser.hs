@@ -1,8 +1,6 @@
 module InputIrParser where
 
-import Control.Monad (join)
 import Control.Monad.State
-import Data.Int
 import qualified Data.Map.Strict as Map
 import InputIr
 import Util

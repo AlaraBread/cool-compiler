@@ -8,8 +8,8 @@ import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import InputIr (ImplementationMapEntry)
 import qualified InputIr
-import Trac (TypeDetails (TypeDetails, methodTags, typeSize, typeTag), TypeDetailsMap)
 import qualified Trac
+import qualified TracIr
 import qualified Twac
 import TwacR (TwacRStatement (TwacRStatement), showByte)
 import qualified TwacR
@@ -605,10 +605,10 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                   ]
              in pure
                   ( case reason of
-                      Trac.DispatchOnVoid -> normalAbort "dispatch_on_void"
-                      Trac.StaticDispatchOnVoid -> normalAbort "static_dispatch_on_void"
-                      Trac.CaseOnVoid -> normalAbort "case_on_void"
-                      Trac.CaseNoMatch typeName ->
+                      TracIr.DispatchOnVoid -> normalAbort "dispatch_on_void"
+                      TracIr.StaticDispatchOnVoid -> normalAbort "static_dispatch_on_void"
+                      TracIr.CaseOnVoid -> normalAbort "case_on_void"
+                      TracIr.CaseNoMatch typeName ->
                         [ LoadLabel (Label "case_no_match") TwacR.Rdi,
                           LoadConst line TwacR.Rsi,
                           Load (attributeAddress typeName 0) TwacR.Rdx,
@@ -616,8 +616,8 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                           LoadConst 1 TwacR.Rdi,
                           Call $ Label "exit"
                         ]
-                      Trac.DivisionByZero -> normalAbort "division_by_zero"
-                      Trac.SubstringOutOfRange -> normalAbort "substring_out_of_range",
+                      TracIr.DivisionByZero -> normalAbort "division_by_zero"
+                      TracIr.SubstringOutOfRange -> normalAbort "substring_out_of_range",
                     []
                   )
           -- TODO: replace commments with calls as we write the code

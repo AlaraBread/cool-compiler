@@ -73,3 +73,9 @@ reverseMap =
           v
     )
     Map.empty
+
+type TypeDetailsMap = Map.Map Type TypeDetails
+
+-- Type size is in words.
+data TypeDetails = TypeDetails {typeTag :: Int, typeSize :: Int, methodTags :: Map.Map String Int}
+  deriving (Show)

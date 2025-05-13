@@ -1,18 +1,89 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TupleSections #-}
 
 module Cfg where
 
-import Data.Foldable (Foldable (toList))
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
+import qualified InputIr
+import TracIr (TracStatement (..))
+import qualified TracIr
 import Util
+
+data CfgIr s v = CfgIr
+  { implementationMap :: Map.Map Type [InputIr.ImplementationMapEntry (CfgMethod s v)],
+    typeDetailsMap :: TypeDetailsMap
+  }
+  deriving (Show)
+
+data CfgMethod s v = CfgMethod {methodName :: String, body :: Cfg s v, formals :: [InputIr.Formal], temporaryCount :: Int}
+  deriving (Show)
+
+createCfgIr :: (Ord v) => TracIr.TracIr v -> CfgIr (TracStatement v) v
+createCfgIr TracIr.TracIr {TracIr.implementationMap, TracIr.typeDetailsMap} =
+  CfgIr
+    { implementationMap =
+        Map.map
+          ( map $
+              fmap $
+                \TracIr.TracMethod
+                   { TracIr.methodName,
+                     TracIr.body,
+                     TracIr.formals,
+                     TracIr.temporaryCount
+                   } ->
+                    CfgMethod
+                      { methodName,
+                        body = constructCfg getTracStatementType body,
+                        formals,
+                        temporaryCount
+                      }
+          )
+          implementationMap,
+      typeDetailsMap
+    }
+
+getTracStatementType :: (Ord v) => TracStatement v -> CfgStatementType v
+getTracStatementType s =
+  let binary a b c = Cfg.OtherStatement (Set.singleton a) (Set.fromList [b, c])
+      unary a b = Cfg.OtherStatement (Set.singleton a) (Set.singleton b)
+      constant a = Cfg.OtherStatement (Set.singleton a) Set.empty
+   in case s of
+        Add a b c -> binary a b c
+        Subtract a b c -> binary a b c
+        Multiply a b c -> binary a b c
+        Divide a b c -> binary a b c
+        LessThan a b c -> binary a b c
+        LessThanOrEqualTo a b c -> binary a b c
+        Equals a b c -> binary a b c
+        IntConstant a _ -> constant a
+        BoolConstant a _ -> constant a
+        StringConstant a _ -> constant a
+        Not a b -> unary a b
+        Negate a b -> unary a b
+        New a _ -> constant a
+        Default a _ -> constant a
+        IsVoid a b -> unary a b
+        Dispatch {dispatchResult, dispatchArgs, dispatchReceiver} ->
+          Cfg.OtherStatement (Set.singleton dispatchResult) (Set.fromList $ dispatchReceiver : dispatchArgs)
+        Jump l -> Cfg.JumpStatement l
+        TracLabel l -> Cfg.LabelStatement l
+        Return a -> Cfg.OtherStatement Set.empty (Set.singleton a)
+        Comment {} -> Cfg.OtherStatement Set.empty Set.empty
+        ConditionalJump _ l l2 -> Cfg.ConditionalJumpStatement l l2
+        Assign a b -> unary a b
+        Case a b labels afterLabel -> Cfg.CaseStatement (Set.singleton a) (Set.singleton b) (map snd $ Map.toList labels) afterLabel
+        TracInternal {} -> Cfg.OtherStatement Set.empty Set.empty
+        Abort {} -> Cfg.OtherStatement Set.empty Set.empty
 
 data Cfg s v = Cfg
   { cfgStart :: Label,
     -- a map from labels to blocks in the Cfg
-    cfgBlocks :: Map.Map Label [s],
+    cfgBlocks :: Map.Map Label [Lined s],
     -- a map from labels to child blocks
     cfgChildren :: Map.Map Label (Set.Set Label),
     -- a map from labels to predecessor blocks
@@ -22,6 +93,7 @@ data Cfg s v = Cfg
     -- map from labels to variables defined in them
     cfgDefinitions :: Map.Map Label (Set.Set v)
   }
+  deriving (Show)
 
 -- this will reverse the edges and also reverse the statements in cfgBlocks
 reverseCfg :: Cfg s v -> Cfg s v
@@ -35,18 +107,18 @@ data CfgStatementType v
   | -- defined used
     OtherStatement (Set.Set v) (Set.Set v)
 
-constructCfg :: (Ord v) => (s -> CfgStatementType v) -> [s] -> Cfg s v
+constructCfg :: (Ord v) => (s -> CfgStatementType v) -> [Lined s] -> Cfg s v
 constructCfg getStatementType (firstStatement : statements) =
   -- crash if there isnt a label at the start of the list
-  let LabelStatement firstLabel = getStatementType firstStatement
+  let Lined lineNumber (LabelStatement firstLabel) = getStatementType <$> firstStatement
    in fst $
         foldl
           (constructCfg' getStatementType)
-          (Cfg firstLabel Map.empty Map.empty Map.empty Map.empty Map.empty, firstLabel)
+          (Cfg firstLabel (Map.singleton firstLabel [firstStatement]) Map.empty Map.empty Map.empty Map.empty, firstLabel)
           statements
 constructCfg _ [] = undefined -- crash on empty list
 
-constructCfg' :: (Ord v) => (s -> CfgStatementType v) -> (Cfg s v, Label) -> s -> (Cfg s v, Label)
+constructCfg' :: (Ord v) => (s -> CfgStatementType v) -> (Cfg s v, Label) -> Lined s -> (Cfg s v, Label)
 constructCfg' getStatementType (Cfg startLabel blocks children predecessors variables variablesDefined, currentLabel) statement =
   let insertIntoChildren parent childList =
         Map.insert
@@ -75,11 +147,13 @@ constructCfg' getStatementType (Cfg startLabel blocks children predecessors vari
           )
           p
           childList
-      insertIntoVariables vars =
+      insertIntoVariables newVars allVars =
         Map.insert
           currentLabel
-          (vars <> fromMaybe Set.empty (Map.lookup currentLabel variables))
-   in case getStatementType statement of
+          (newVars <> fromMaybe Set.empty (Map.lookup currentLabel allVars))
+          allVars
+      Lined _ statement' = statement
+   in case getStatementType statement' of
         JumpStatement label ->
           ( Cfg
               startLabel
@@ -179,7 +253,7 @@ runAiStep variableMap (estimates, workList) statement =
   let (estimates', affectedVariables) = transferFunction estimates statement
    in (estimates', Set.unions $ Set.map (variableMap Map.!) affectedVariables)
 
-runAi' :: (Ai s v a, Ord v) => Set.Set Label -> Cfg s v -> Map.Map v a -> Map.Map v (Set.Set Label) -> (Map.Map v a, Set.Set Label)
+runAi' :: (Ai s v a, Ord v, Ai (Lined s) v a) => Set.Set Label -> Cfg s v -> Map.Map v a -> Map.Map v (Set.Set Label) -> (Map.Map v a, Set.Set Label)
 runAi' workList cfg estimates variableMap =
   let (label, workList') = Set.deleteFindMin workList
       statements = cfgBlocks cfg Map.! label
@@ -192,7 +266,7 @@ runAi' workList cfg estimates variableMap =
         then (estimates, Set.empty)
         else runAi' workList'' cfg estimates' variableMap
 
-runAi :: (Ai s v a, Lattice a, Ord v) => Cfg s v -> Map.Map v a
+runAi :: (Ai s v a, Lattice a, Ord v, Ai (Lined s) v a) => Cfg s v -> Map.Map v a
 runAi cfg =
   let workList = initialWorkList cfg
       estimates = buildInitialEstimates cfg

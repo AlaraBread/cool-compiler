@@ -1,14 +1,18 @@
 module Main where
 
 import Assembly
+import Cfg (CfgIr (CfgIr), CfgMethod (..), createCfgIr)
 import Control.Monad (unless, when)
 import Data.List (isSuffixOf)
 import Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import InputIr
 import InputIrParser
+import Ssa (generateSsa)
 import System.Directory.Internal.Prelude (getArgs)
 import Trac
+import TracIr (TracIr (TracIr), TracMethod (TracMethod))
+import qualified TracIr
 import Twac
 import TwacR
 import Util
@@ -44,8 +48,15 @@ main = do
   when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Trac: "
   let (tracIr, temporaryState) = generateTrac pickLowestParents' inputIr
   let (TracIr tracImpMap _) = tracIr
-  let TracMethod _ tracBody _ _ = findMethod' Trac.methodName tracImpMap
+  let TracMethod _ tracBody _ _ = findMethod' TracIr.methodName tracImpMap
   when debug $ putStrLn $ showLines tracBody
+
+  let tracCfg = createCfgIr tracIr
+  let (CfgIr cfgImpMap _) = tracCfg
+  when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Cfg Trac: "
+  let CfgMethod _ cfgBody _ _ = findMethod' Cfg.methodName cfgImpMap
+  when debug $ print cfgBody
+  when debug $ print $ generateSsa cfgBody
 
   when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Twac: "
   let (twacIr, temporaryState') = generateTwac tracIr temporaryState

@@ -216,6 +216,9 @@ constructCfg' getStatementType (Cfg startLabel blocks children predecessors vari
             currentLabel
           )
 
+-- We add the estimate before and after a given program point to our cfg
+type AnnotatedCfg s v a = Cfg (s, Map.Map v (a, a)) v
+
 class (Eq a) => Lattice a where
   top :: a
   bottom :: a
@@ -237,38 +240,64 @@ invertMap originalMap =
     concatMap (\(k, set) -> (,Set.singleton k) <$> Set.toList set) $
       Map.toList originalMap
 
-buildInitialEstimates :: (Lattice a, Ord v) => Cfg s v -> Map.Map v a
+buildInitialEstimates :: (Lattice a, Ord v) => Cfg s v -> Map.Map v (a, a)
 buildInitialEstimates cfg =
   Map.fromList $
-    map (,bottom) $
+    map (,(bottom, bottom)) $
       concatMap Set.toList $
         Map.elems $
           cfgVariables cfg
 
+buildInitialEstimatesCfg :: (Lattice a, Ord v) => Cfg s v -> AnnotatedCfg s v a
+buildInitialEstimatesCfg cfg =
+  let blocks = cfgBlocks cfg
+      initialEstimates = buildInitialEstimates cfg
+      blocks' = fmap (fmap (fmap (,initialEstimates))) blocks
+   in cfg {cfgBlocks = blocks'}
+
 initialWorkList :: Cfg s v -> Set.Set Label
 initialWorkList cfg = Set.fromList $ Map.keys $ cfgBlocks cfg
 
-runAiStep :: (Ai s v a, Ord v) => Map.Map v (Set.Set Label) -> (Map.Map v a, Set.Set Label) -> s -> (Map.Map v a, Set.Set Label)
-runAiStep variableMap (estimates, workList) statement =
-  let (estimates', affectedVariables) = transferFunction estimates statement
-   in (estimates', Set.unions $ Set.map (variableMap Map.!) affectedVariables)
+runAiStep ::
+  (Ai s v a, Ord v) =>
+  Map.Map v (Set.Set Label) ->
+  ([Lined (s, Map.Map v (a, a))], Map.Map v a, Set.Set Label) -> -- processed statements, before state, worklist
+  Lined (s, Map.Map v (a, a)) -> -- statement
+  ([Lined (s, Map.Map v (a, a))], Map.Map v a, Set.Set Label) -- processed statements, after state, worklist
+runAiStep variableMap (processedStatements, beforeState, workList) (Lined line (statement, _)) =
+  let (afterState, affectedVariables) = transferFunction beforeState statement
+      affectedBlocks = Set.unions $ Set.map (variableMap Map.!) affectedVariables
+      workList' = Set.union workList affectedBlocks
+      beforeAfterState = Map.intersectionWith (,) beforeState afterState
+      statement' = Lined line (statement, beforeAfterState)
+   in (statement' : processedStatements, afterState, workList')
 
-runAi' :: (Ai s v a, Ord v, Ai (Lined s) v a) => Set.Set Label -> Cfg s v -> Map.Map v a -> Map.Map v (Set.Set Label) -> (Map.Map v a, Set.Set Label)
-runAi' workList cfg estimates variableMap =
+runAi' ::
+  (Ai s v a, Ord v) =>
+  Set.Set Label ->
+  AnnotatedCfg s v a ->
+  Map.Map v (Set.Set Label) ->
+  (AnnotatedCfg s v a, Set.Set Label)
+runAi' workList cfg variableMap =
   let (label, workList') = Set.deleteFindMin workList
       statements = cfgBlocks cfg Map.! label
-      (estimates', workList'') =
+      initialState = fmap snd $ snd $ item $ head statements
+      (statementsReverse', _, workList'') =
         List.foldl'
           (runAiStep variableMap)
-          (estimates, workList')
+          ([], initialState, workList')
           statements
+      statements' = reverse statementsReverse'
+      cfgBlocks' = Map.insert label statements' (cfgBlocks cfg)
    in if null workList
-        then (estimates, Set.empty)
-        else runAi' workList'' cfg estimates' variableMap
+        then (cfg, Set.empty)
+        else runAi' workList'' (cfg {cfgBlocks = cfgBlocks'}) variableMap
 
-runAi :: (Ai s v a, Lattice a, Ord v, Ai (Lined s) v a) => Cfg s v -> Map.Map v a
+-- we add a set of estimates after every statement. this covers every program
+-- point because all blocks start with a Label.
+runAi :: (Ai s v a, Lattice a, Ord v) => Cfg s v -> AnnotatedCfg s v a
 runAi cfg =
   let workList = initialWorkList cfg
-      estimates = buildInitialEstimates cfg
+      cfg' = buildInitialEstimatesCfg cfg
       variableMap = invertMap $ cfgVariables cfg
-   in fst $ runAi' workList cfg estimates variableMap
+   in fst $ runAi' workList cfg' variableMap

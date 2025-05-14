@@ -293,11 +293,12 @@ generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount
       epilogue =
         Lined 0 (DeallocateStackSpace (temporarySpace + length paramRegisters'))
           : map (Lined 0 . Pop) (reverse calleeSavedRegisters)
-      -- do not touch internal expressions, except to give them a label
+      -- do not touch internal expressions
+      -- we make sure to preserve the first expression (the label)
       twacR = generateTwacR epilogue body
       body' = case twacR of
-        [Lined _ (TwacRStatement (TwacInternal _))] -> Lined 0 (TwacRStatement $ TwacLabel $ Label $ typeName ++ "." ++ name) : twacR
-        _ -> prologue ++ twacR
+        [Lined _ (TwacRStatement (TwacLabel _)), Lined _ (TwacRStatement (TwacInternal _))] -> twacR
+        _ -> head twacR : prologue ++ tail twacR
    in TwacRMethod
         name
         body'

@@ -222,6 +222,14 @@ constructCfg' getStatementType (Cfg startLabel blocks children predecessors vari
             currentLabel
           )
 
+-- we should probably do something kinder to the branch predictor. oops. at
+-- least the labels are vaguely in the order of the original code?
+cfgToLinearCode :: Cfg s v -> [Lined s]
+cfgToLinearCode cfg =
+  let startBlock = cfgBlocks cfg Map.! cfgStart cfg
+      restBlocks = Map.delete (cfgStart cfg) (cfgBlocks cfg)
+   in startBlock ++ concat (Map.elems restBlocks)
+
 -- We add the estimate before and after a given program point to our cfg
 type AnnotatedCfg s v a = Cfg (s, Map.Map v (a, a)) v
 

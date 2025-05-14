@@ -7,12 +7,13 @@ module Ssa where
 import Cfg (Cfg (..))
 import Control.Monad (foldM, unless)
 import Control.Monad.State
-import Data.Bifunctor (Bifunctor (bimap))
-import Data.Foldable (Foldable (foldl'), find)
+import Data.Bifunctor (Bifunctor (bimap, first, second))
+import Data.Foldable (Foldable (foldl'), find, maximumBy, minimumBy, traverse_)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe, isJust)
 import qualified Data.Set as Set
 import Debug.Trace (trace, traceM, traceShowId)
+import GHC.Base (compareInt)
 import TracIr (AbortReason (..), TracStatement (..))
 import Util (Label, Lined (Lined), Variable, reverseMap)
 
@@ -268,7 +269,7 @@ currentDefinition v = do
 -- Cooper, Keith D., Harvey, Timothy J. and Kennedy, Ken. "A simple, fast dominance algorithm."
 dominanceFrontiers :: Cfg s v -> Map.Map Label (Set.Set Label)
 dominanceFrontiers cfg =
-  let idoms = idom cfg
+  let idoms = (trace "idom!!!!!!!!!!!!" $ traceShowId $ idom cfg)
    in Map.foldlWithKey'
         ( \frontiers b bPredecessors ->
             if length bPredecessors >= 2
@@ -285,7 +286,7 @@ dominanceFrontiers cfg =
 -- from https://en.wikipedia.org/wiki/Static_single-assignment_form
 dominanceFrontiers' :: Map.Map Label Label -> Label -> Label -> Map.Map Label (Set.Set Label) -> Map.Map Label (Set.Set Label)
 dominanceFrontiers' idoms runner b frontiers =
-  if runner == fromJust (Map.lookup b idoms)
+  if runner == idoms Map.! b
     then frontiers
     else
       dominanceFrontiers'
@@ -295,60 +296,104 @@ dominanceFrontiers' idoms runner b frontiers =
         ( Map.insert
             runner
             ( Set.insert b $
-                fromMaybe Set.empty $
-                  Map.lookup runner frontiers
+                Map.findWithDefault Set.empty runner frontiers
             )
             frontiers
         )
 
+-- naive idom algorithm based on the naive dominator algorithm presented at
+-- https://en.wikipedia.org/wiki/Dominator_(graph_theory)#Algorithms
+--
+-- note that the entry node does not have an immediate dominator, so its entry
+-- will contain Nothing.
+-- idom :: Cfg s v -> Map.Map Label (Maybe Label)
+-- idom cfg =
+--   let labels = Map.keys $ cfgBlocks cfg
+
+--       dominatorsInitial :: Map.Map Label (Set.Set Label)
+--       dominatorsInitial =
+--         Map.insert (cfgStart cfg) (Set.singleton $ cfgStart cfg) $
+--           Map.fromList $
+--             map (,Set.fromList labels) labels
+
+--       dom' :: Map.Map Label (Set.Set Label) -> Map.Map Label (Set.Set Label)
+--       dom' doms =
+--         foldl'
+--           ( \doms' n ->
+--               Map.insert
+--                 n
+--                 (Set.insert n $ Set.unions $ Set.map (doms' Map.!) (cfgPredecessors cfg Map.! n))
+--                 doms'
+--           )
+--           doms
+--           (Map.keys doms)
+
+--       fix :: (Eq a) => (a -> a) -> a -> a
+--       fix f x
+--         | x == f x = x
+--         | otherwise = fix f (f x)
+
+--       dominators :: Map.Map Label (Set.Set Label)
+--       dominators = fix dom' dominatorsInitial
+
+--       strictDominators :: Map.Map Label (Set.Set Label)
+--       strictDominators = Map.mapWithKey Set.delete dominators
+--    in Map.mapWithKey
+--         ( \n sDom ->
+--             Set.lookupMin $
+--               Set.filter
+--                 (\n' -> not $ Set.member n' $ Set.unions $ Set.toList $ Set.map (strictDominators Map.!) sDom)
+--                 sDom
+--         )
+--         strictDominators
+
 -- Cooper, Keith D., Harvey, Timothy J. and Kennedy, Ken. "A simple, fast dominance algorithm."
--- calculate immidiate dominators of all nodes
+-- calculate immediate dominators of all nodes, except for the entry node which gets a Nothing
 idom :: Cfg s v -> Map.Map Label Label
-idom (Cfg {cfgStart, cfgPredecessors}) =
-  let ordering = dfs cfgPredecessors cfgStart
-      ordering' = case ordering of
-        (_ : o) -> o
-        [] -> []
-      ordering'' = reverse ordering'
-      orderingMap = Map.fromList [(n, i) | n <- ordering'', i <- [0 :: Int ..]]
-   in idom' cfgPredecessors ordering'' orderingMap True (Map.singleton cfgStart cfgStart)
+idom (Cfg {cfgStart, cfgPredecessors, cfgChildren}) =
+  let ordering = reversePostOrder cfgChildren cfgStart
+      orderingMap = Map.fromList $ zip ordering [0 ..]
+      labels = Map.keys cfgChildren
+      startIdoms = Map.singleton cfgStart cfgStart
+   in idom' cfgStart cfgPredecessors (traceShowId ordering) orderingMap True startIdoms
 
 idom' ::
+  Label ->
   Map.Map Label (Set.Set Label) ->
   [Label] ->
   Map.Map Label Int ->
   Bool ->
   Map.Map Label Label ->
   Map.Map Label Label
-idom' predecessors nodes nodeOrdering changed idoms
+idom' cfgStart predecessors nodes nodeOrdering changed idoms
   | not changed = idoms
   | otherwise =
       let (idoms', changed') =
             foldl'
               ( \(idoms'', changed'') b ->
                   let preds = predecessors Map.! b
-                      firstPred = fromJust $ find (\i -> isJust $ Map.lookup i idoms'') preds
+                      firstPred = minimumBy (\a b -> compareInt (nodeOrdering Map.! a) (nodeOrdering Map.! b)) preds
                       newIdom =
                         foldl'
                           ( \newIdom' p ->
                               if isJust $ Map.lookup p idoms''
-                                then intersect idoms'' nodeOrdering p newIdom'
+                                then trace "arf" (intersect idoms'' nodeOrdering p newIdom')
                                 else newIdom'
                           )
                           firstPred
-                          preds
+                          (Set.filter (/= firstPred) preds)
                    in if Map.lookup b idoms'' == Just newIdom
                         then (idoms'', changed'')
                         else (Map.insert b newIdom idoms'', True)
               )
               (idoms, False)
-              nodes
-       in idom' predecessors nodes nodeOrdering changed' idoms'
+              (tail nodes) -- skip start node
+       in idom' cfgStart predecessors nodes nodeOrdering changed' idoms'
 
 intersect :: Map.Map Label Label -> Map.Map Label Int -> Label -> Label -> Label
 intersect idoms ordering f1 f2
-  | ordering Map.! f1 == ordering Map.! f2 = f1
-  | ordering Map.! f1 < ordering Map.! f2 = intersect idoms ordering (idoms Map.! f1) f2
+  | trace (show idoms ++ " " ++ show ordering ++ " " ++ show f1 ++ " " ++ show f2) (f1 == f2) = f1
+  | ordering Map.! f1 > ordering Map.! f2 = intersect idoms ordering (idoms Map.! f1) f2
   | otherwise = intersect idoms ordering f1 (idoms Map.! f2)
 
 -- depth first ordering
@@ -357,13 +402,26 @@ dfs edges start = dfs' edges [start] Set.empty
 
 dfs' :: Map.Map Label (Set.Set Label) -> [Label] -> Set.Set Label -> [Label]
 dfs' edges (current : rest) visited =
-  let new = Set.difference (fromJust $ Map.lookup current edges) visited
+  let new = Set.difference (edges Map.! current) visited
       new' = Set.toList new
       visited' = visited <> new
    in current
         : Set.toList new
         ++ dfs' edges (rest ++ new') visited'
 dfs' _ [] _ = []
+
+-- reverse post order traversal; see
+-- https://eli.thegreenplace.net/2015/directed-graph-traversal-orderings-and-applications-to-data-flow-analysis/
+reversePostOrder :: Map.Map Label (Set.Set Label) -> Label -> [Label]
+reversePostOrder graph start =
+  let dfsWalk :: Label -> State (Set.Set Label, [Label]) ()
+      dfsWalk node = do
+        modify $ first (Set.insert node)
+        let successors = graph Map.! node
+        visited <- gets fst
+        traverse_ dfsWalk $ Set.filter (not . (`Set.member` visited)) successors
+        modify $ second (node :)
+   in snd $ execState (dfsWalk start) (Set.empty, [])
 
 -- put here to avoid circular dependencies :)
 type AiState a = State (Map.Map SsaVariable a, Set.Set SsaVariable)

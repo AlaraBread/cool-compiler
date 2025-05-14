@@ -431,7 +431,7 @@ generateTracMethod pickLowestParents classMap attributes type' (InputIr.Method {
    in pure
         TracMethod
           { methodName = InputIr.lexeme methodName,
-            body = Lined 0 (TracLabel $ Label $ typeName ++ "." ++ (InputIr.lexeme methodName)) : body,
+            body = Lined 0 (TracLabel $ Label $ typeName ++ "." ++ InputIr.lexeme methodName) : body,
             formals = methodFormals,
             temporaryCount = temporaryCount'
           }

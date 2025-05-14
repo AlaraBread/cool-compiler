@@ -12,6 +12,7 @@ import Data.Foldable (Foldable (foldl'), find)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe, isJust)
 import qualified Data.Set as Set
+import Debug.Trace (trace, traceM, traceShowId)
 import TracIr (AbortReason (..), TracStatement (..))
 import Util (Label, Lined (Lined), Variable, reverseMap)
 
@@ -60,11 +61,11 @@ calculatePhiFunctions domFrontiers =
                 ( \p'' k ->
                     Map.insert
                       k
-                      (Set.insert variable $ fromMaybe Set.empty $ Map.lookup block p'')
+                      (Set.insert variable $ Map.findWithDefault Set.empty block p'')
                       p''
                 )
                 p'
-                (domFrontiers Map.! block)
+                (domFrontiers Map.! trace "1" block)
           )
           p
           blocks
@@ -113,7 +114,7 @@ fillVariablesWithZero =
                 DivisionByZero -> DivisionByZero
                 SubstringOutOfRange -> SubstringOutOfRange
             )
-        Phi _ _ -> undefined -- cant happen
+        Phi _ _ -> error "Phi function should not occur in fillVariablesWithZero"
 
 -- https://sites.cs.ucsb.edu/~yufeiding/cs293s/slides/293S_06_SSA.pdf
 rename ::
@@ -133,7 +134,7 @@ rename ::
 rename blocks domTree successors phiFunctions block =
   do
     (oldDefinitions, _) <- get
-    let phiFunctionsForBlock = phiFunctions Map.! block
+    let phiFunctionsForBlock = Map.findWithDefault Map.empty block phiFunctions
     phiFunctionsForBlock' <-
       traverse
         (\(lhs, rhs) -> (,rhs) <$> genName' lhs)
@@ -222,12 +223,12 @@ rename blocks domTree successors phiFunctions block =
                     pure $ lined' $ Abort lineNumber reason'
                   Phi _ _ -> undefined -- cant happen
         )
-        (blocks Map.! block)
+        (blocks Map.! trace "3" block)
     let blocks' = Map.insert block blockStatements blocks
     phiFunctions'' <-
       foldM
         ( \phiFunctions'' successor -> do
-            let phiFunctionsForSuccessor = phiFunctions'' Map.! successor
+            let phiFunctionsForSuccessor = phiFunctions'' Map.! trace "4" successor
             phiFunctionsForSuccessor' <-
               (Set.fromList <$>)
                 <$> traverse
@@ -236,12 +237,12 @@ rename blocks domTree successors phiFunctions block =
             pure $ Map.insert successor phiFunctionsForSuccessor' phiFunctions''
         )
         phiFunctions'
-        (successors Map.! block)
+        (successors Map.! trace "5" block)
     (phiFunctions''', blocks'') <-
       foldM
         (\(p, b) -> rename b domTree successors p)
         (phiFunctions'', blocks')
-        (domTree Map.! block)
+        (domTree Map.! trace "6" block)
     (_, counters) <- get
     put (oldDefinitions, counters)
     pure (phiFunctions''', blocks'')
@@ -278,7 +279,7 @@ dominanceFrontiers cfg =
                   bPredecessors
               else frontiers
         )
-        Map.empty
+        (Map.fromList $ map (,Set.empty) $ Map.keys $ cfgBlocks cfg) -- we start with each label dominating the empty set
         (cfgPredecessors cfg)
 
 -- from https://en.wikipedia.org/wiki/Static_single-assignment_form
@@ -289,7 +290,7 @@ dominanceFrontiers' idoms runner b frontiers =
     else
       dominanceFrontiers'
         idoms
-        (idoms Map.! runner)
+        (idoms Map.! trace "7" runner)
         b
         ( Map.insert
             runner
@@ -325,7 +326,7 @@ idom' predecessors nodes nodeOrdering changed idoms
       let (idoms', changed') =
             foldl'
               ( \(idoms'', changed'') b ->
-                  let preds = predecessors Map.! b
+                  let preds = predecessors Map.! trace "8" b
                       firstPred = fromJust $ find (\i -> isJust $ Map.lookup i idoms'') preds
                       newIdom =
                         foldl'
@@ -346,9 +347,9 @@ idom' predecessors nodes nodeOrdering changed idoms
 
 intersect :: Map.Map Label Label -> Map.Map Label Int -> Label -> Label -> Label
 intersect idoms ordering f1 f2
-  | ordering Map.! f1 == ordering Map.! f2 = f1
-  | ordering Map.! f1 < ordering Map.! f2 = intersect idoms ordering (idoms Map.! f1) f2
-  | otherwise = intersect idoms ordering f1 (idoms Map.! f2)
+  | ordering Map.! trace "9" f1 == ordering Map.! trace "10" f2 = f1
+  | ordering Map.! trace "11" f1 < ordering Map.! trace "12" f2 = intersect idoms ordering (idoms Map.! trace "13" f1) f2
+  | otherwise = intersect idoms ordering f1 (idoms Map.! trace "14" f2)
 
 -- depth first ordering
 dfs :: Map.Map Label (Set.Set Label) -> Label -> [Label]
@@ -371,7 +372,7 @@ type AiState a = State (Map.Map SsaVariable a, Set.Set SsaVariable)
 aiSet :: (Eq a) => SsaVariable -> a -> AiState a ()
 aiSet var value = do
   (state, affected) <- get
-  unless (state Map.! var == value) $ modify $ bimap (Map.insert var value) (Set.insert var)
+  unless (state Map.! trace "15" var == value) $ modify $ bimap (Map.insert var value) (Set.insert var)
 
 aiLookup :: SsaVariable -> AiState a a
-aiLookup var = gets ((Map.! var) . fst)
+aiLookup var = gets ((Map.! trace "16" var) . fst)

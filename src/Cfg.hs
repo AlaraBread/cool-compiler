@@ -7,7 +7,7 @@ module Cfg where
 
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import qualified Data.Set as Set
 import qualified InputIr
 import TracIr (TracStatement (..))
@@ -117,10 +117,22 @@ constructCfg :: (Ord v) => (s -> CfgStatementType v) -> [Lined s] -> Cfg s v
 constructCfg getStatementType (firstStatement : statements) =
   -- crash if there isnt a label at the start of the list
   let Lined lineNumber (LabelStatement firstLabel) = getStatementType <$> firstStatement
+      getLabel :: CfgStatementType v -> Maybe Label
+      getLabel (LabelStatement label) = Just label
+      getLabel _ = Nothing
+      labels = firstLabel : mapMaybe (getLabel . getStatementType . item) statements
    in fst $
         foldl
           (constructCfg' getStatementType)
-          (Cfg firstLabel (Map.singleton firstLabel [firstStatement]) Map.empty Map.empty Map.empty Map.empty, firstLabel)
+          ( Cfg
+              firstLabel
+              (Map.singleton firstLabel [firstStatement])
+              (Map.fromList $ map (,Set.empty) labels) -- ensure we always have a children set
+              (Map.fromList $ map (,Set.empty) labels) -- ensure we always have a predecessors set
+              Map.empty
+              Map.empty,
+            firstLabel
+          )
           statements
 constructCfg _ [] = undefined -- crash on empty list
 

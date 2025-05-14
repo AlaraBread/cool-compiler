@@ -5,15 +5,16 @@
 module Ssa where
 
 import Cfg (Cfg (..))
-import Control.Monad (foldM, unless)
+import Control.Monad (foldM, forM, unless)
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (bimap, first, second))
 import Data.Foldable (foldl', traverse_)
 import Data.List (minimumBy)
 import qualified Data.Map as Map
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust)
 import qualified Data.Set as Set
-import Debug.Trace (trace, traceM, traceShowId, traceShowM, traceStack)
+import qualified Data.Traversable as Set
+import Debug.Trace (trace, traceM, traceShow, traceShowId, traceShowM, traceStack)
 import GHC.Base (compareInt)
 import TracIr (AbortReason (..), TracStatement (..))
 import Util (Label, Lined (Lined), Variable, reverseMap)
@@ -27,56 +28,46 @@ instance Show SsaVariable where
 generateSsa :: Cfg (TracStatement Variable) Variable -> Cfg (TracStatement SsaVariable) SsaVariable
 generateSsa cfg =
   let domFrontiers = dominanceFrontiers cfg
-      Cfg {cfgStart, cfgBlocks, cfgChildren, cfgPredecessors, cfgDefinitions} = cfg
+      Cfg {cfgStart, cfgBlocks, cfgChildren, cfgPredecessors, cfgVariables, cfgDefinitions} = cfg
       domTree =
         Map.union
           (reverseMap $ Map.map Set.singleton $ idom cfg)
           (Map.map (const Set.empty) cfgBlocks)
       domTree' = Map.insert cfgStart (Set.delete cfgStart (domTree Map.! cfgStart)) domTree
-      revVariableDefinitions = reverseMap cfgDefinitions
+      blocks = Map.keys cfgBlocks
+      variables = traceShowId $ Map.unionWith Set.union cfgDefinitions cfgVariables
+      revVariables = traceShowId $ reverseMap variables
+
       phiFunctions =
-        Map.map
-          ( Map.fromList
-              . map
-                (\v -> (SsaVariable v 0, Set.singleton $ SsaVariable v 0))
-              . Set.toList
-          )
-          $ calculatePhiFunctions domFrontiers revVariableDefinitions
-      (_, cfgBlocks') =
+        Map.fromList $
+          map
+            (\block -> (block, calculatePhiFunctionsForBlock revVariables (variables Map.! (traceShowId block)) (Map.findWithDefault Set.empty block $ reverseMap domFrontiers)))
+            blocks
+
+      cfgBlocks' =
         evalState
           ( rename
               (fillVariablesWithZero cfgBlocks)
               domTree'
-              cfgChildren
               phiFunctions
+              Map.empty
               cfgStart
           )
-          (Map.empty, Map.empty)
-   in Cfg cfgStart cfgBlocks' cfgChildren cfgPredecessors Map.empty Map.empty
+          Map.empty
+   in -- TODO: set variable usages
+      Cfg cfgStart cfgBlocks' cfgChildren cfgPredecessors Map.empty Map.empty
 
-calculatePhiFunctions ::
-  Map.Map Label (Set.Set Label) ->
+calculatePhiFunctionsForBlock ::
   Map.Map Variable (Set.Set Label) ->
-  Map.Map Label (Set.Set Variable)
-calculatePhiFunctions domFrontiers =
-  Map.foldlWithKey'
-    ( \p variable blocks ->
-        foldl'
-          ( \p' block ->
-              foldl'
-                ( \p'' k ->
-                    Map.insert
-                      k
-                      (Set.insert variable $ Map.findWithDefault Set.empty block p'')
-                      p''
-                )
-                p'
-                (domFrontiers Map.! block)
-          )
-          p
-          blocks
-    )
-    Map.empty
+  Set.Set Variable ->
+  Set.Set Label ->
+  Map.Map Variable (Set.Set Label)
+calculatePhiFunctionsForBlock revVariables usedVariables revDomFrontier =
+  Map.fromList $
+    filter ((> 1) . Set.size . snd) $ -- we only need a phi function if we have conflicting definitions -- we only need a phi function if we have conflicting definitions -- we only need a phi function if we have conflicting definitions -- we only need a phi function if we have conflicting definitions
+    -- we only need a phi function if we have conflicting definitions
+      map (\var -> (var, trace "arf" (Set.intersection (traceShowId revDomFrontier) $ traceShowId (Map.findWithDefault Set.empty var revVariables)))) $
+        Set.toList usedVariables
 
 fillVariablesWithZero :: Map.Map Label [Lined (TracStatement Variable)] -> Map.Map Label [Lined (TracStatement SsaVariable)]
 fillVariablesWithZero =
@@ -126,150 +117,128 @@ fillVariablesWithZero =
 rename ::
   Map.Map Label [Lined (TracStatement SsaVariable)] ->
   Map.Map Label (Set.Set Label) ->
-  Map.Map Label (Set.Set Label) ->
-  Map.Map Label (Map.Map SsaVariable (Set.Set SsaVariable)) ->
+  Map.Map Label (Map.Map Variable (Set.Set Label)) ->
+  Map.Map Label (Map.Map Variable SsaVariable) ->
   Label ->
-  State
-    (Map.Map Variable SsaVariable, Map.Map Variable Int)
-    ( Map.Map
-        Label
-        ( Map.Map SsaVariable (Set.Set SsaVariable)
-        ),
-      Map.Map Label [Lined (TracStatement SsaVariable)]
-    )
-rename blocks domTree successors phiFunctions block =
-  do
-    (oldDefinitions, _) <- get
-    let phiFunctionsForBlock = Map.findWithDefault Map.empty block phiFunctions
-    phiFunctionsForBlock' <-
-      traverse
-        (\(lhs, rhs) -> (,rhs) <$> genName' lhs)
-        (Map.toList phiFunctionsForBlock)
-    let phiFunctionsForBlock'' = Map.fromList phiFunctionsForBlock'
-        phiFunctions' = Map.insert block phiFunctionsForBlock'' phiFunctions
-    blockStatements <-
-      mapM
-        ( \statementIn ->
-            let Lined lineNumber statement = statementIn
-                lined' = Lined lineNumber
-                binary op lhs a b = do
+  State (Map.Map Variable SsaVariable) (Map.Map Label [Lined (TracStatement SsaVariable)])
+rename blocks domTree phiFunctions openingVars block = do
+  let blockStatements = Map.findWithDefault [] block blocks
+  blockStatements' <-
+    mapM
+      ( \statementIn ->
+          let Lined lineNumber statement = statementIn
+              lined' = Lined lineNumber
+              binary op lhs a b = do
+                a' <- currentDefinition' a
+                b' <- currentDefinition' b
+                lhs' <- genName' lhs
+                pure $ lined' $ op lhs' a' b'
+              unary op lhs a = do
+                a' <- currentDefinition' a
+                lhs' <- genName' lhs
+                pure $ lined' $ op lhs' a'
+              constant op lhs c = do
+                lhs' <- genName' lhs
+                pure $ lined' $ op lhs' c
+           in case statement of
+                Add lhs a b -> binary Add lhs a b
+                Subtract lhs a b -> binary Subtract lhs a b
+                Multiply lhs a b -> binary Multiply lhs a b
+                Divide lhs a b -> binary Divide lhs a b
+                LessThan lhs a b -> binary LessThan lhs a b
+                LessThanOrEqualTo lhs a b -> binary LessThanOrEqualTo lhs a b
+                Equals lhs a b -> binary Equals lhs a b
+                IntConstant lhs i -> constant IntConstant lhs i
+                BoolConstant lhs b -> constant BoolConstant lhs b
+                StringConstant lhs s -> constant StringConstant lhs s
+                Not lhs a -> unary Not lhs a
+                Negate lhs a -> unary Negate lhs a
+                New lhs t -> constant New lhs t
+                Default lhs t -> constant Default lhs t
+                IsVoid lhs a -> unary IsVoid lhs a
+                Dispatch
+                  { dispatchResult,
+                    dispatchReceiver,
+                    dispatchReceiverType,
+                    dispatchType,
+                    dispatchMethod,
+                    dispatchArgs
+                  } -> do
+                    dispatchArgs' <- traverse currentDefinition' dispatchArgs
+                    dispatchReceiver' <- currentDefinition' dispatchReceiver
+                    dispatchResult' <- genName' dispatchResult
+                    pure $
+                      lined' $
+                        Dispatch
+                          { dispatchResult = dispatchResult',
+                            dispatchReceiver = dispatchReceiver',
+                            dispatchReceiverType,
+                            dispatchType,
+                            dispatchMethod,
+                            dispatchArgs = dispatchArgs'
+                          }
+                Jump l -> pure $ lined' $ Jump l
+                TracLabel l -> pure $ lined' $ TracLabel l
+                Return a -> do
                   a' <- currentDefinition' a
-                  b' <- currentDefinition' b
-                  lhs' <- genName' lhs
-                  pure $ lined' $ op lhs' a' b'
-                unary op lhs a = do
+                  pure $ lined' $ Return a'
+                Comment s -> pure $ lined' $ Comment s
+                ConditionalJump condition trueLabel falseLabel -> do
+                  condition' <- currentDefinition' condition
+                  pure $ lined' $ ConditionalJump condition' trueLabel falseLabel
+                Assign lhs rhs -> unary Assign lhs rhs
+                Case lhs a jumpTable endLabel -> do
                   a' <- currentDefinition' a
                   lhs' <- genName' lhs
-                  pure $ lined' $ op lhs' a'
-                constant op lhs c = do
-                  lhs' <- genName' lhs
-                  pure $ lined' $ op lhs' c
-             in case statement of
-                  Add lhs a b -> binary Add lhs a b
-                  Subtract lhs a b -> binary Subtract lhs a b
-                  Multiply lhs a b -> binary Multiply lhs a b
-                  Divide lhs a b -> binary Divide lhs a b
-                  LessThan lhs a b -> binary LessThan lhs a b
-                  LessThanOrEqualTo lhs a b -> binary LessThanOrEqualTo lhs a b
-                  Equals lhs a b -> binary Equals lhs a b
-                  IntConstant lhs i -> constant IntConstant lhs i
-                  BoolConstant lhs b -> constant BoolConstant lhs b
-                  StringConstant lhs s -> constant StringConstant lhs s
-                  Not lhs a -> unary Not lhs a
-                  Negate lhs a -> unary Negate lhs a
-                  New lhs t -> constant New lhs t
-                  Default lhs t -> constant Default lhs t
-                  IsVoid lhs a -> unary IsVoid lhs a
-                  Dispatch
-                    { dispatchResult,
-                      dispatchReceiver,
-                      dispatchReceiverType,
-                      dispatchType,
-                      dispatchMethod,
-                      dispatchArgs
-                    } -> do
-                      dispatchArgs' <- traverse currentDefinition' dispatchArgs
-                      dispatchReceiver' <- currentDefinition' dispatchReceiver
-                      dispatchResult' <- genName' dispatchResult
-                      pure $
-                        lined' $
-                          Dispatch
-                            { dispatchResult = dispatchResult',
-                              dispatchReceiver = dispatchReceiver',
-                              dispatchReceiverType,
-                              dispatchType,
-                              dispatchMethod,
-                              dispatchArgs = dispatchArgs'
-                            }
-                  Jump l -> pure $ lined' $ Jump l
-                  TracLabel l -> pure $ lined' $ TracLabel l
-                  Return a -> do
-                    a' <- currentDefinition' a
-                    pure $ lined' $ Return a'
-                  Comment s -> pure $ lined' $ Comment s
-                  ConditionalJump condition trueLabel falseLabel -> do
-                    condition' <- currentDefinition' condition
-                    pure $ lined' $ ConditionalJump condition' trueLabel falseLabel
-                  Assign lhs rhs -> unary Assign lhs rhs
-                  Case lhs a jumpTable endLabel -> do
-                    a' <- currentDefinition' a
-                    lhs' <- genName' lhs
-                    pure $ lined' $ Case lhs' a' jumpTable endLabel
-                  TracInternal internal -> pure $ lined' $ TracInternal internal
-                  Abort lineNumber reason -> do
-                    reason' <- case reason of
-                      DispatchOnVoid -> pure DispatchOnVoid
-                      StaticDispatchOnVoid -> pure StaticDispatchOnVoid
-                      CaseOnVoid -> pure CaseOnVoid
-                      CaseNoMatch v -> do
-                        v' <- currentDefinition' v
-                        pure $ CaseNoMatch v'
-                      DivisionByZero -> pure DivisionByZero
-                      SubstringOutOfRange -> pure SubstringOutOfRange
-                    pure $ lined' $ Abort lineNumber reason'
-                  Phi _ _ -> error "Phi function /should/ be unreachable in rename" -- cant happen
-        )
-        (blocks Map.! block)
-    let blocks' = Map.insert block blockStatements blocks
-    phiFunctions'' <-
-      foldM
-        ( \phiFunctions'' successor -> do
-            let phiFunctionsForSuccessor = Map.findWithDefault Map.empty successor phiFunctions''
-            phiFunctionsForSuccessor' <-
-              (Set.fromList <$>)
-                <$> traverse
-                  (traverse currentDefinition' . Set.toList)
-                  phiFunctionsForSuccessor
-            pure $ Map.insert successor phiFunctionsForSuccessor' phiFunctions''
-        )
-        phiFunctions'
-        (successors Map.! block)
-    (phiFunctions''', blocks'') <-
-      foldM
-        (\(p, b) -> rename b domTree successors p)
-        (phiFunctions'', blocks')
-        $ (domTree Map.! block)
-    (_, counters) <- get
-    put (oldDefinitions, counters)
-    pure (phiFunctions''', blocks'')
+                  pure $ lined' $ Case lhs' a' jumpTable endLabel
+                TracInternal internal -> pure $ lined' $ TracInternal internal
+                Abort lineNumber reason -> do
+                  reason' <- case reason of
+                    DispatchOnVoid -> pure DispatchOnVoid
+                    StaticDispatchOnVoid -> pure StaticDispatchOnVoid
+                    CaseOnVoid -> pure CaseOnVoid
+                    CaseNoMatch v -> do
+                      v' <- currentDefinition' v
+                      pure $ CaseNoMatch v'
+                    DivisionByZero -> pure DivisionByZero
+                    SubstringOutOfRange -> pure SubstringOutOfRange
+                  pure $ lined' $ Abort lineNumber reason'
+                Phi _ _ -> error "Phi function /should/ be unreachable in rename" -- cant happen
+      )
+      blockStatements
 
-genName' :: SsaVariable -> State (Map.Map Variable SsaVariable, Map.Map Variable Int) SsaVariable
+  -- insert phi functions
+  let phiFunctionsBlock = Map.findWithDefault Map.empty block phiFunctions
+      phiFunctionBlock' =
+        Map.toList $
+          Map.mapWithKey
+            ( \var labels ->
+                Set.fromList $ catMaybes $ Set.toList $ Set.map (\label -> Map.findWithDefault Nothing var (Map.map Just $ Map.findWithDefault Map.empty label openingVars)) labels
+            )
+            phiFunctionsBlock
+  phiFunctionCode <- forM phiFunctionBlock' (\(dst, srcs) -> flip Phi srcs <$> genName dst)
+  let blockStatements'' = head blockStatements' : fmap (Lined 0) phiFunctionCode ++ tail blockStatements'
+      blocks' = Map.insert block blockStatements'' blocks
+
+  closingVars <- gets (\ours -> Map.insert block ours openingVars)
+
+  foldM (\b label -> rename b domTree phiFunctions closingVars label) blocks' (Set.toList (Map.findWithDefault Set.empty block domTree))
+
+genName' :: SsaVariable -> State (Map.Map Variable SsaVariable) SsaVariable
 genName' (SsaVariable v _) = genName v
 
-genName :: Variable -> State (Map.Map Variable SsaVariable, Map.Map Variable Int) SsaVariable
-genName v = do
-  (currentDefinitions, counters) <- get
-  let c = fromMaybe 0 $ Map.lookup v counters
-  put (currentDefinitions, Map.insert v (c + 1) counters)
-  pure $ SsaVariable v c
+genName :: Variable -> State (Map.Map Variable SsaVariable) SsaVariable
+genName var = do
+  SsaVariable v n <- gets $ Map.findWithDefault (SsaVariable var 0) var
+  let newVar = SsaVariable v (n + 1)
+  modify $ Map.insert var newVar
+  pure newVar
 
-currentDefinition' :: SsaVariable -> State (Map.Map Variable SsaVariable, Map.Map Variable Int) SsaVariable
+currentDefinition' :: SsaVariable -> State (Map.Map Variable SsaVariable) SsaVariable
 currentDefinition' (SsaVariable v _) = currentDefinition v
 
-currentDefinition :: Variable -> State (Map.Map Variable SsaVariable, Map.Map Variable Int) SsaVariable
-currentDefinition v = do
-  (currentDefinitions, _) <- get
-  pure $ fromMaybe (SsaVariable v 0) $ Map.lookup v currentDefinitions
+currentDefinition :: Variable -> State (Map.Map Variable SsaVariable) SsaVariable
+currentDefinition var = gets $ Map.findWithDefault (SsaVariable var 0) var
 
 -- Cooper, Keith D., Harvey, Timothy J. and Kennedy, Ken. "A simple, fast dominance algorithm."
 dominanceFrontiers :: Cfg s v -> Map.Map Label (Set.Set Label)

@@ -297,7 +297,7 @@ generateTracExpr
                       label <- getLabel
                       (body, bodyVariable) <-
                         generateTracExpr pickLowestParents classMap bindingMap' selfType caseElementBody
-                      pure $
+                      pure
                         ( caseElementType,
                           label,
                           [lined' $ TracLabel label] ++ body ++ [lined' $ Assign resultVariable bodyVariable, lined' $ Jump endLabel]

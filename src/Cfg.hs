@@ -201,7 +201,7 @@ constructCfg' getStatementType (Cfg startLabel blocks children predecessors vari
                 variables
                 variablesDefined,
               currentLabel,
-              Constructing
+              Skipping
             )
           ConditionalJumpStatement l1 l2 ->
             ( Cfg

@@ -26,3 +26,5 @@ executable coolcompiler
   other-modules: Cfg
   other-modules: Assembly
   other-modules: Ssa
+  other-modules: ConstantFolding
+  other-modules: DeadCodeElimination

@@ -1,5 +1,7 @@
 -- We do dead code elimination. It explains what it is in the name. What else do
 -- you want from me.
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module DeadCodeElimination (deadCodeElimination) where
 

@@ -97,6 +97,7 @@ instance (Show v) => Show (TracStatement v) where
     Case dst src labels _ -> show dst ++ " <- case " ++ show src ++ " " ++ show labels
     TracInternal internal -> "internal: " ++ show internal
     Abort line reason -> "abort " ++ show line ++ " " ++ show reason
+    Phi dst srcs -> show dst ++ "<- φ" ++ concat (Set.toList (Set.map ((" " ++) . show) srcs))
 
 showBinary :: (Show v) => v -> v -> v -> String -> String
 showBinary a b c op = show a ++ " <- " ++ op ++ " " ++ show b ++ " " ++ show c

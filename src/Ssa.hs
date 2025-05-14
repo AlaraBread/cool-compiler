@@ -13,6 +13,7 @@ import Data.List (minimumBy)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe, isJust)
 import qualified Data.Set as Set
+import Debug.Trace (trace, traceM, traceShowId, traceShowM, traceStack)
 import GHC.Base (compareInt)
 import TracIr (AbortReason (..), TracStatement (..))
 import Util (Label, Lined (Lined), Variable, reverseMap)
@@ -27,7 +28,11 @@ generateSsa :: Cfg (TracStatement Variable) Variable -> Cfg (TracStatement SsaVa
 generateSsa cfg =
   let domFrontiers = dominanceFrontiers cfg
       Cfg {cfgStart, cfgBlocks, cfgChildren, cfgPredecessors, cfgDefinitions} = cfg
-      domTree = Map.insert cfgStart Set.empty (reverseMap $ Map.map Set.singleton $ idom cfg)
+      domTree =
+        Map.union
+          (reverseMap $ Map.map Set.singleton $ idom cfg)
+          (Map.map (const Set.empty) cfgBlocks)
+      domTree' = Map.insert cfgStart (Set.delete cfgStart (domTree Map.! cfgStart)) domTree
       revVariableDefinitions = reverseMap cfgDefinitions
       phiFunctions =
         Map.map
@@ -41,7 +46,7 @@ generateSsa cfg =
         evalState
           ( rename
               (fillVariablesWithZero cfgBlocks)
-              domTree
+              domTree'
               cfgChildren
               phiFunctions
               cfgStart
@@ -222,7 +227,7 @@ rename blocks domTree successors phiFunctions block =
                       DivisionByZero -> pure DivisionByZero
                       SubstringOutOfRange -> pure SubstringOutOfRange
                     pure $ lined' $ Abort lineNumber reason'
-                  Phi _ _ -> undefined -- cant happen
+                  Phi _ _ -> error "Phi function /should/ be unreachable in rename" -- cant happen
         )
         (blocks Map.! block)
     let blocks' = Map.insert block blockStatements blocks
@@ -243,7 +248,7 @@ rename blocks domTree successors phiFunctions block =
       foldM
         (\(p, b) -> rename b domTree successors p)
         (phiFunctions'', blocks')
-        (domTree Map.! block)
+        $ (domTree Map.! block)
     (_, counters) <- get
     put (oldDefinitions, counters)
     pure (phiFunctions''', blocks'')

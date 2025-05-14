@@ -8,6 +8,8 @@ import Cfg (Cfg (..))
 import Control.Monad (foldM, unless)
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (bimap, first, second))
+import Data.Foldable (foldl', traverse_)
+import Data.List (minimumBy)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe, isJust)
 import qualified Data.Set as Set

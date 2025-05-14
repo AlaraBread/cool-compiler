@@ -6,7 +6,7 @@ module ConstantFolding (constantFold) where
 -- We do constant folding here.
 
 import Cfg
-import Control.Monad (foldM, unless)
+import Control.Monad (unless)
 import Control.Monad.State
 import Data.Int (Int32)
 import qualified Data.List as List

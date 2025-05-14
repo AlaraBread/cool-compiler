@@ -7,8 +7,6 @@ module Trac where
 
 import Control.Monad.State
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
-import Distribution.Simple.Utils (lowercase)
 import InputIr (Method (methodFormals))
 import qualified InputIr
 import TracIr

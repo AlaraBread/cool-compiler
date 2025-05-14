@@ -7,7 +7,6 @@ import Data.Int (Int32)
 import qualified Data.Map.Strict as Map
 import InputIr (Formal)
 import qualified InputIr
-import qualified Trac
 import qualified TracIr
 import Util
 

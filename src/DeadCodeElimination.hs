@@ -6,9 +6,7 @@
 module DeadCodeElimination (deadCodeElimination) where
 
 import Cfg
-import Control.Monad (unless)
 import Control.Monad.State
-import Data.Bifunctor (bimap)
 import qualified Data.List as List
 import Data.Map.Strict as Map
 import Data.Maybe (fromJust)

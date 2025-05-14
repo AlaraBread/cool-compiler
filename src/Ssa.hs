@@ -8,9 +8,8 @@ import Cfg (Cfg (..))
 import Control.Monad (foldM, unless)
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (bimap, first, second))
-import Data.Foldable (Foldable (foldl'), find, maximumBy, minimumBy, traverse_)
 import qualified Data.Map as Map
-import Data.Maybe (fromJust, fromMaybe, isJust)
+import Data.Maybe (fromMaybe, isJust)
 import qualified Data.Set as Set
 import GHC.Base (compareInt)
 import TracIr (AbortReason (..), TracStatement (..))

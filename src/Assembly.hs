@@ -8,7 +8,6 @@ import Data.Foldable (find)
 import Data.Int (Int64)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromJust, mapMaybe)
-import Distribution.Compat.Prelude (isJust)
 import InputIr (ImplementationMapEntry)
 import qualified InputIr
 import qualified TracIr

@@ -283,11 +283,29 @@ constructCfg' getStatementType (Cfg startLabel blocks children predecessors vari
 
 -- we should probably do something kinder to the branch predictor. oops. at
 -- least the labels are vaguely in the order of the original code?
-cfgToLinearCode :: Cfg s v -> [Lined s]
-cfgToLinearCode cfg =
-  let startBlock = cfgBlocks cfg Map.! cfgStart cfg
-      restBlocks = Map.delete (cfgStart cfg) (cfgBlocks cfg)
-   in startBlock ++ concat (Map.elems restBlocks)
+cfgToLinearCode :: (s -> CfgStatementType v) -> Cfg s v -> [Lined s]
+cfgToLinearCode getStatementType cfg =
+  -- ensure fallthrough blocks are in correct order
+  let (blocks', _) =
+        foldl
+          ( \(blocks, visited) (block, blockContents) ->
+              if Set.member block visited
+                then (blocks, visited)
+                else
+                  let Lined _ lastStatement = last blockContents
+                   in case getStatementType lastStatement of
+                        ConditionalJumpStatement _ fallthrough ->
+                          ( Map.insert
+                              block
+                              (blockContents ++ (cfgBlocks cfg Map.! fallthrough))
+                              blocks,
+                            Set.fromList [block, fallthrough] <> visited
+                          )
+                        _ -> (Map.insert block blockContents blocks, Set.insert block visited)
+          )
+          (Map.empty, Set.empty)
+          (Map.toList $ cfgBlocks cfg)
+   in concat (Map.elems blocks')
 
 -- neat debugging tool
 cfgToGraphviz :: Cfg s v -> String

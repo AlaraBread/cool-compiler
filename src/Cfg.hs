@@ -72,13 +72,13 @@ getTracStatementType s =
           Cfg.OtherStatement (Set.singleton dispatchResult) (Set.fromList $ dispatchReceiver : dispatchArgs)
         Jump l -> Cfg.JumpStatement l
         TracLabel l -> Cfg.LabelStatement l
-        Return a -> Cfg.OtherStatement Set.empty (Set.singleton a)
+        Return a -> Cfg.ReturnStatement a
         Comment {} -> Cfg.OtherStatement Set.empty Set.empty
         ConditionalJump _ l l2 -> Cfg.ConditionalJumpStatement l l2
         Assign a b -> unary a b
         Case a b labels afterLabel -> Cfg.CaseStatement (Set.singleton a) (Set.singleton b) (map snd $ Map.toList labels) afterLabel
         TracInternal {} -> Cfg.OtherStatement Set.empty Set.empty
-        Abort {} -> Cfg.OtherStatement Set.empty Set.empty
+        Abort {} -> Cfg.AbortStatement
 
 data Cfg s v = Cfg
   { cfgStart :: Label,
@@ -110,6 +110,8 @@ data CfgStatementType v
   | ConditionalJumpStatement Label Label
   | LabelStatement Label
   | CaseStatement (Set.Set v) (Set.Set v) [Label] Label
+  | ReturnStatement v
+  | AbortStatement
   | -- defined used
     OtherStatement (Set.Set v) (Set.Set v)
 
@@ -121,8 +123,8 @@ constructCfg getStatementType (firstStatement : statements) =
       getLabel (LabelStatement label) = Just label
       getLabel _ = Nothing
       labels = firstLabel : mapMaybe (getLabel . getStatementType . item) statements
-   in fst $
-        foldl
+      (cfg, _, _) =
+        List.foldl'
           (constructCfg' getStatementType)
           ( Cfg
               firstLabel
@@ -131,13 +133,18 @@ constructCfg getStatementType (firstStatement : statements) =
               (Map.fromList $ map (,Set.empty) labels) -- ensure we always have a predecessors set
               Map.empty
               Map.empty,
-            firstLabel
+            firstLabel,
+            Constructing
           )
           statements
+   in cfg
 constructCfg _ [] = undefined -- crash on empty list
 
-constructCfg' :: (Ord v) => (s -> CfgStatementType v) -> (Cfg s v, Label) -> Lined s -> (Cfg s v, Label)
-constructCfg' getStatementType (Cfg startLabel blocks children predecessors variables variablesDefined, currentLabel) statement =
+-- allows us to skip to the next label after an abort or return statement
+data CfgState = Skipping | Constructing
+
+constructCfg' :: (Ord v) => (s -> CfgStatementType v) -> (Cfg s v, Label, CfgState) -> Lined s -> (Cfg s v, Label, CfgState)
+constructCfg' getStatementType (Cfg startLabel blocks children predecessors variables variablesDefined, currentLabel, state) statement =
   let insertIntoChildren parent childList =
         Map.insert
           parent
@@ -171,68 +178,119 @@ constructCfg' getStatementType (Cfg startLabel blocks children predecessors vari
           (newVars <> fromMaybe Set.empty (Map.lookup currentLabel allVars))
           allVars
       Lined _ statement' = statement
-   in case getStatementType statement' of
-        JumpStatement label ->
-          ( Cfg
-              startLabel
-              blocks'
-              (insertIntoChildren currentLabel [label] children)
-              (insertIntoPredecessors currentLabel [label] predecessors)
-              variables
-              variablesDefined,
-            currentLabel
-          )
-        ConditionalJumpStatement l1 l2 ->
-          ( Cfg
-              startLabel
-              blocks'
-              (insertIntoChildren currentLabel [l1, l2] children)
-              (insertIntoPredecessors currentLabel [l1, l2] predecessors)
-              variables
-              variablesDefined,
-            currentLabel
-          )
-        CaseStatement defined used labels afterLabel ->
-          ( Cfg
-              startLabel
-              blocks'
-              ( foldl
-                  (\c l -> insertIntoChildren l [afterLabel] c)
-                  (insertIntoChildren currentLabel labels children)
-                  labels
-              )
-              ( foldl
-                  (\p l -> insertIntoPredecessors l [afterLabel] p)
-                  (insertIntoPredecessors currentLabel labels predecessors)
-                  labels
-              )
-              (insertIntoVariables used variables)
-              (insertIntoVariables defined variablesDefined),
-            currentLabel
-          )
-        LabelStatement label ->
-          if currentLabel == label
-            then (Cfg startLabel blocks' children predecessors variables variablesDefined, label)
-            else
-              ( Cfg
-                  startLabel
-                  blocks'
-                  (insertIntoChildren currentLabel [label] children)
-                  (insertIntoPredecessors currentLabel [label] predecessors)
-                  variables
-                  variablesDefined,
-                label
-              )
-        OtherStatement defined used ->
-          ( Cfg
-              startLabel
-              blocks'
-              children
-              predecessors
-              (insertIntoVariables used variables)
-              (insertIntoVariables defined variablesDefined),
-            currentLabel
-          )
+   in case state of
+        Skipping -> case getStatementType statement' of
+          LabelStatement label ->
+            ( Cfg
+                startLabel
+                blocks'
+                children
+                predecessors
+                variables
+                variablesDefined,
+              label,
+              if currentLabel == label then Skipping else Constructing
+            )
+          _ ->
+            ( Cfg
+                startLabel
+                blocks'
+                children
+                predecessors
+                variables
+                variablesDefined,
+              currentLabel,
+              Skipping
+            )
+        Constructing -> case getStatementType statement' of
+          JumpStatement label ->
+            ( Cfg
+                startLabel
+                blocks'
+                (insertIntoChildren currentLabel [label] children)
+                (insertIntoPredecessors currentLabel [label] predecessors)
+                variables
+                variablesDefined,
+              currentLabel,
+              Constructing
+            )
+          ConditionalJumpStatement l1 l2 ->
+            ( Cfg
+                startLabel
+                blocks'
+                (insertIntoChildren currentLabel [l1, l2] children)
+                (insertIntoPredecessors currentLabel [l1, l2] predecessors)
+                variables
+                variablesDefined,
+              currentLabel,
+              Constructing
+            )
+          CaseStatement defined used labels afterLabel ->
+            ( Cfg
+                startLabel
+                blocks'
+                ( foldl
+                    (\c l -> insertIntoChildren l [afterLabel] c)
+                    (insertIntoChildren currentLabel labels children)
+                    labels
+                )
+                ( foldl
+                    (\p l -> insertIntoPredecessors l [afterLabel] p)
+                    (insertIntoPredecessors currentLabel labels predecessors)
+                    labels
+                )
+                (insertIntoVariables used variables)
+                (insertIntoVariables defined variablesDefined),
+              currentLabel,
+              Constructing
+            )
+          LabelStatement label ->
+            if currentLabel == label
+              then (Cfg startLabel blocks' children predecessors variables variablesDefined, label, Constructing)
+              else
+                ( Cfg
+                    startLabel
+                    blocks'
+                    (insertIntoChildren currentLabel [label] children)
+                    (insertIntoPredecessors currentLabel [label] predecessors)
+                    variables
+                    variablesDefined,
+                  label,
+                  Constructing
+                )
+          ReturnStatement a ->
+            ( Cfg
+                startLabel
+                blocks'
+                children
+                predecessors
+                (insertIntoVariables (Set.singleton a) variables)
+                variablesDefined,
+              currentLabel,
+              Skipping
+            )
+          AbortStatement ->
+            ( Cfg
+                startLabel
+                blocks'
+                children
+                predecessors
+                variables
+                variablesDefined,
+              currentLabel,
+              Skipping
+            )
+          OtherStatement defined used ->
+            ( Cfg
+                startLabel
+                blocks'
+                children
+                predecessors
+                (insertIntoVariables used variables)
+                (insertIntoVariables defined variablesDefined),
+              currentLabel,
+              Constructing
+            )
 
 -- we should probably do something kinder to the branch predictor. oops. at
 -- least the labels are vaguely in the order of the original code?

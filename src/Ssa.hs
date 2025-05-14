@@ -65,7 +65,7 @@ calculatePhiFunctions domFrontiers =
                       p''
                 )
                 p'
-                (domFrontiers Map.! trace "1" block)
+                (domFrontiers Map.! block)
           )
           p
           blocks
@@ -223,12 +223,12 @@ rename blocks domTree successors phiFunctions block =
                     pure $ lined' $ Abort lineNumber reason'
                   Phi _ _ -> undefined -- cant happen
         )
-        (blocks Map.! trace "3" block)
+        (blocks Map.! block)
     let blocks' = Map.insert block blockStatements blocks
     phiFunctions'' <-
       foldM
         ( \phiFunctions'' successor -> do
-            let phiFunctionsForSuccessor = phiFunctions'' Map.! trace "4" successor
+            let phiFunctionsForSuccessor = Map.findWithDefault Map.empty successor phiFunctions''
             phiFunctionsForSuccessor' <-
               (Set.fromList <$>)
                 <$> traverse
@@ -237,12 +237,12 @@ rename blocks domTree successors phiFunctions block =
             pure $ Map.insert successor phiFunctionsForSuccessor' phiFunctions''
         )
         phiFunctions'
-        (successors Map.! trace "5" block)
+        (successors Map.! block)
     (phiFunctions''', blocks'') <-
       foldM
         (\(p, b) -> rename b domTree successors p)
         (phiFunctions'', blocks')
-        (domTree Map.! trace "6" block)
+        (domTree Map.! block)
     (_, counters) <- get
     put (oldDefinitions, counters)
     pure (phiFunctions''', blocks'')
@@ -290,7 +290,7 @@ dominanceFrontiers' idoms runner b frontiers =
     else
       dominanceFrontiers'
         idoms
-        (idoms Map.! trace "7" runner)
+        (idoms Map.! runner)
         b
         ( Map.insert
             runner
@@ -326,7 +326,7 @@ idom' predecessors nodes nodeOrdering changed idoms
       let (idoms', changed') =
             foldl'
               ( \(idoms'', changed'') b ->
-                  let preds = predecessors Map.! trace "8" b
+                  let preds = predecessors Map.! b
                       firstPred = fromJust $ find (\i -> isJust $ Map.lookup i idoms'') preds
                       newIdom =
                         foldl'
@@ -347,9 +347,9 @@ idom' predecessors nodes nodeOrdering changed idoms
 
 intersect :: Map.Map Label Label -> Map.Map Label Int -> Label -> Label -> Label
 intersect idoms ordering f1 f2
-  | ordering Map.! trace "9" f1 == ordering Map.! trace "10" f2 = f1
-  | ordering Map.! trace "11" f1 < ordering Map.! trace "12" f2 = intersect idoms ordering (idoms Map.! trace "13" f1) f2
-  | otherwise = intersect idoms ordering f1 (idoms Map.! trace "14" f2)
+  | ordering Map.! f1 == ordering Map.! f2 = f1
+  | ordering Map.! f1 < ordering Map.! f2 = intersect idoms ordering (idoms Map.! f1) f2
+  | otherwise = intersect idoms ordering f1 (idoms Map.! f2)
 
 -- depth first ordering
 dfs :: Map.Map Label (Set.Set Label) -> Label -> [Label]
@@ -372,7 +372,7 @@ type AiState a = State (Map.Map SsaVariable a, Set.Set SsaVariable)
 aiSet :: (Eq a) => SsaVariable -> a -> AiState a ()
 aiSet var value = do
   (state, affected) <- get
-  unless (state Map.! trace "15" var == value) $ modify $ bimap (Map.insert var value) (Set.insert var)
+  unless (state Map.! var == value) $ modify $ bimap (Map.insert var value) (Set.insert var)
 
 aiLookup :: SsaVariable -> AiState a a
-aiLookup var = gets ((Map.! trace "16" var) . fst)
+aiLookup var = gets ((Map.! var) . fst)

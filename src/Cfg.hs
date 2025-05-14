@@ -95,9 +95,15 @@ data Cfg s v = Cfg
   }
   deriving (Show)
 
--- this will reverse the edges and also reverse the statements in cfgBlocks
+-- this will reverse all of the edges and also reverse the statements in
+-- cfgBlocks, except for the first statement [ which should be the label ]
 reverseCfg :: Cfg s v -> Cfg s v
-reverseCfg = undefined
+reverseCfg cfg =
+  cfg
+    { cfgChildren = reverseMap $ cfgPredecessors cfg,
+      cfgPredecessors = reverseMap $ cfgChildren cfg,
+      cfgBlocks = Map.map (\statements -> head statements : reverse (tail statements)) $ cfgBlocks cfg
+    }
 
 data CfgStatementType v
   = JumpStatement Label

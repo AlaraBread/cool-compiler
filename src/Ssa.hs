@@ -12,7 +12,6 @@ import Data.Foldable (Foldable (foldl'), find, maximumBy, minimumBy, traverse_)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe, isJust)
 import qualified Data.Set as Set
-import Debug.Trace (trace, traceM, traceShowId)
 import GHC.Base (compareInt)
 import TracIr (AbortReason (..), TracStatement (..))
 import Util (Label, Lined (Lined), Variable, reverseMap)
@@ -269,7 +268,7 @@ currentDefinition v = do
 -- Cooper, Keith D., Harvey, Timothy J. and Kennedy, Ken. "A simple, fast dominance algorithm."
 dominanceFrontiers :: Cfg s v -> Map.Map Label (Set.Set Label)
 dominanceFrontiers cfg =
-  let idoms = (trace "idom!!!!!!!!!!!!" $ traceShowId $ idom cfg)
+  let idoms = idom cfg
    in Map.foldlWithKey'
         ( \frontiers b bPredecessors ->
             if length bPredecessors >= 2
@@ -355,7 +354,7 @@ idom (Cfg {cfgStart, cfgPredecessors, cfgChildren}) =
       orderingMap = Map.fromList $ zip ordering [0 ..]
       labels = Map.keys cfgChildren
       startIdoms = Map.singleton cfgStart cfgStart
-   in idom' cfgStart cfgPredecessors (traceShowId ordering) orderingMap True startIdoms
+   in idom' cfgStart cfgPredecessors ordering orderingMap True startIdoms
 
 idom' ::
   Label ->
@@ -377,7 +376,7 @@ idom' cfgStart predecessors nodes nodeOrdering changed idoms
                         foldl'
                           ( \newIdom' p ->
                               if isJust $ Map.lookup p idoms''
-                                then trace "arf" (intersect idoms'' nodeOrdering p newIdom')
+                                then intersect idoms'' nodeOrdering p newIdom'
                                 else newIdom'
                           )
                           firstPred
@@ -392,7 +391,7 @@ idom' cfgStart predecessors nodes nodeOrdering changed idoms
 
 intersect :: Map.Map Label Label -> Map.Map Label Int -> Label -> Label -> Label
 intersect idoms ordering f1 f2
-  | trace (show idoms ++ " " ++ show ordering ++ " " ++ show f1 ++ " " ++ show f2) (f1 == f2) = f1
+  | f1 == f2 = f1
   | ordering Map.! f1 > ordering Map.! f2 = intersect idoms ordering (idoms Map.! f1) f2
   | otherwise = intersect idoms ordering f1 (idoms Map.! f2)
 

@@ -289,6 +289,21 @@ cfgToLinearCode cfg =
       restBlocks = Map.delete (cfgStart cfg) (cfgBlocks cfg)
    in startBlock ++ concat (Map.elems restBlocks)
 
+-- neat debugging tool
+cfgToGraphviz :: Cfg s v -> String
+cfgToGraphviz (Cfg {cfgChildren}) =
+  "digraph {\n"
+    ++ concat
+      ( concatMap
+          snd
+          ( Map.toList $
+              Map.mapWithKey
+                (\parent -> Set.toList . Set.map (\child -> "  \"" ++ show parent ++ "\" -> \"" ++ show child ++ "\";\n"))
+                cfgChildren
+          )
+      )
+    ++ "}"
+
 -- We add the estimate before and after a given program point to our cfg
 type AnnotatedCfg s v a = Cfg (s, Map.Map v (a, a)) v
 

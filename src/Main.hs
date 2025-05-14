@@ -1,7 +1,7 @@
 module Main where
 
 import Assembly
-import Cfg (CfgIr (CfgIr), CfgMethod (..), createCfgIr)
+import Cfg (CfgIr (CfgIr), CfgMethod (..), cfgToGraphviz, createCfgIr)
 import Control.Monad (unless, when)
 import Data.List (isSuffixOf)
 import Data.Map.Strict as Map
@@ -56,7 +56,12 @@ main = do
   when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Cfg Trac: "
   let CfgMethod _ cfgBody _ _ = findMethod' Cfg.methodName cfgImpMap
   when debug $ print cfgBody
-  when debug $ print $ generateSsa cfgBody
+  when debug $ putStrLn $ cfgToGraphviz cfgBody
+
+  when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Ssa Trac: "
+  let ssaCfgBody = generateSsa cfgBody
+  when debug $ print ssaCfgBody
+  when debug $ putStrLn $ cfgToGraphviz ssaCfgBody
 
   when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Twac: "
   let (twacIr, temporaryState') = generateTwac tracIr temporaryState

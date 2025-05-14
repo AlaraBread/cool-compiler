@@ -314,3 +314,6 @@ runAi cfg =
       cfg' = buildInitialEstimatesCfg cfg
       variableMap = invertMap $ cfgVariables cfg
    in fst $ runAi' workList cfg' variableMap bottomEstimates
+
+removeAnnotations :: AnnotatedCfg s v a -> Cfg s v
+removeAnnotations cfg = cfg {cfgBlocks = Map.map (fmap $ fmap fst) $ cfgBlocks cfg}

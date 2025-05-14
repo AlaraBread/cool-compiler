@@ -2,6 +2,7 @@
 
 module TracIr where
 
+import Data.Int (Int32)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Distribution.Simple.Utils (lowercase)
@@ -27,7 +28,7 @@ data TracStatement v
   | LessThan v v v
   | LessThanOrEqualTo v v v
   | Equals v v v
-  | IntConstant v Int
+  | IntConstant v Int32
   | BoolConstant v Bool
   | StringConstant v String
   | Not v v

@@ -3,6 +3,7 @@
 module InputIr where
 
 import Data.Foldable (minimumBy)
+import Data.Int (Int32)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (listToMaybe)
 import Util
@@ -98,7 +99,7 @@ data ExprWithoutLine
   | Equal !(Typed Expr) !(Typed Expr)
   | Not !(Typed Expr)
   | Negate !(Typed Expr)
-  | IntegerConstant !Int
+  | IntegerConstant !Int32
   | StringConstant !String
   | Variable !Identifier
   | BooleanConstant !Bool

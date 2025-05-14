@@ -1,13 +1,15 @@
 -- We do dead code elimination. It explains what it is in the name. What else do
 -- you want from me.
 
-module DeadCodeElimination where
+module DeadCodeElimination (deadCodeElimination) where
 
 import Cfg
 import Control.Monad (unless)
 import Control.Monad.State
 import Data.Bifunctor (bimap)
+import qualified Data.List as List
 import Data.Map.Strict as Map
+import Data.Maybe (fromJust)
 import qualified Data.Set as Set
 import Ssa
 import TracIr
@@ -26,21 +28,15 @@ instance Lattice Liveness where
     | a == b = a
     | otherwise = top
 
-type LAState = State (Map.Map SsaVariable Liveness, Set.Set SsaVariable)
+type LaState = AiState Liveness
 
--- only actually put a vairable onto the worklist if it changes
-set :: Liveness -> SsaVariable -> LAState ()
-set liveness var = do
-  (state, affected) <- get
-  unless (state Map.! var == liveness) $ modify $ bimap (Map.insert var Dead) (Set.insert var)
+kill :: SsaVariable -> LaState ()
+kill var = aiSet var Dead
 
-kill :: SsaVariable -> LAState ()
-kill = set Dead
+vivify :: SsaVariable -> LaState ()
+vivify var = aiSet var Live
 
-vivify :: SsaVariable -> LAState ()
-vivify = set Live
-
-vivifyAttributes :: LAState ()
+vivifyAttributes :: LaState ()
 vivifyAttributes =
   let isAttribute :: SsaVariable -> Bool
       isAttribute (SsaVariable (AttributeV v) _) = True
@@ -50,15 +46,15 @@ vivifyAttributes =
         let attributes = Prelude.filter isAttribute variables
         mapM_ vivify attributes
 
-unary :: SsaVariable -> SsaVariable -> LAState ()
+unary :: SsaVariable -> SsaVariable -> LaState ()
 unary dst src = kill dst *> vivify src
 
-binary :: SsaVariable -> SsaVariable -> SsaVariable -> LAState ()
+binary :: SsaVariable -> SsaVariable -> SsaVariable -> LaState ()
 binary dst src1 src2 = kill dst *> vivify src1 *> vivify src2
 
 -- note that this is a backwards analysis, i.e. we are updating the estimates
 -- from /after/ statement runs to those for /before/ statement runs
-transferFunction' :: TracStatement SsaVariable -> LAState ()
+transferFunction' :: TracStatement SsaVariable -> LaState ()
 transferFunction' statement = case statement of
   Add dst src1 src2 -> binary dst src1 src2
   Subtract dst src1 src2 -> binary dst src1 src2
@@ -136,9 +132,72 @@ isStatementDead (statement, estimateMap) =
         Abort _ _ -> False
         Phi dst srcs -> False
 
+-- We combine two nodes in the CFG into one basic block.
+--
+-- Preconditions: parent has exactly one child (child), and child has exactly
+-- one parent (parent). (i.e. it is valid to combine them into one basic block)
+combineBlocks ::
+  Cfg (TracStatement SsaVariable) SsaVariable ->
+  Label ->
+  Label ->
+  Cfg (TracStatement SsaVariable) SsaVariable
+combineBlocks cfg parent child =
+  let parentCode = cfgBlocks cfg Map.! parent
+      childCode = cfgBlocks cfg Map.! child
+      cfgBlocks' = Map.insert parent (parentCode ++ childCode) $ Map.delete child $ cfgBlocks cfg
+
+      -- note that the parent had exactly one child, child. Therefore, we can
+      -- simply replace its children with child's children and everything is
+      -- fine.
+      childChildren = cfgChildren cfg Map.! child
+      cfgChildren' = Map.insert parent childChildren $ cfgChildren cfg
+
+      cfgPredecessors' = Map.delete child $ cfgPredecessors cfg
+
+      parentVariables = cfgVariables cfg Map.! parent
+      childVariables = cfgVariables cfg Map.! child
+      cfgVariables' = Map.insert parent (Set.union parentVariables childVariables) $ Map.delete child $ cfgVariables cfg
+   in cfg
+        { cfgBlocks = cfgBlocks',
+          cfgChildren = cfgChildren',
+          cfgPredecessors = cfgPredecessors',
+          cfgVariables = cfgVariables'
+        }
+
+-- combine all blocks where the control flow is unambiguous.
+combineUnambiguousBlocks :: Cfg (TracStatement SsaVariable) SsaVariable -> Cfg (TracStatement SsaVariable) SsaVariable
+combineUnambiguousBlocks cfg =
+  let cfgChildrenSingular :: Map.Map Label Label
+      cfgChildrenSingular = Map.map (fromJust . Set.lookupMin) $ Map.filter ((1 ==) . Set.size) $ cfgChildren cfg
+
+      candidates :: Map Label Label
+      candidates = Map.filter (\child -> 1 == Set.size (cfgPredecessors cfg Map.! child)) cfgChildrenSingular
+   in -- we do these transformations all at the same time because our
+      -- transformations need to all occur in the same order. consider a -> b ->
+      -- c; if we do some steps of combining a and b, then some steps of
+      -- combining b and c, then some other steps of combining a and b; this
+      -- would be bad.
+      Map.foldlWithKey' combineBlocks cfg candidates
+
+-- remove unreachable blocks from the CFG.
+removeUnreachableBlocks :: Cfg (TracStatement SsaVariable) SsaVariable -> Cfg (TracStatement SsaVariable) SsaVariable
+removeUnreachableBlocks cfg =
+  let unreachable label = (label /= cfgStart cfg) && Set.null (cfgPredecessors cfg Map.! label)
+      unreachableBlocks = Prelude.filter unreachable $ Map.keys $ cfgBlocks cfg
+
+      -- we do not need to alter predecessors because by definition we only remove blocks without predecessors
+      cfgBlocks' = List.foldl' (flip Map.delete) (cfgBlocks cfg) unreachableBlocks
+      cfgChildren' = List.foldl' (flip Map.delete) (cfgChildren cfg) unreachableBlocks
+      cfgVariables' = List.foldl' (flip Map.delete) (cfgVariables cfg) unreachableBlocks
+   in cfg
+        { cfgBlocks = cfgBlocks',
+          cfgChildren = cfgChildren',
+          cfgVariables = cfgVariables'
+        }
+
 deadCodeElimination :: Cfg (TracStatement SsaVariable) SsaVariable -> Cfg (TracStatement SsaVariable) SsaVariable
 deadCodeElimination cfg =
   let annotatedCfg :: AnnotatedCfg (TracStatement SsaVariable) SsaVariable Liveness
       annotatedCfg = reverseCfg $ runAi $ reverseCfg cfg
       annotatedCfg' = annotatedCfg {cfgBlocks = Map.map (Prelude.filter $ not . isStatementDead . item) $ cfgBlocks annotatedCfg}
-   in removeAnnotations annotatedCfg'
+   in removeUnreachableBlocks $ combineUnambiguousBlocks $ removeAnnotations annotatedCfg'

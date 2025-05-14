@@ -4,6 +4,7 @@ module Assembly where
 
 import Control.Monad.State
 import Data.Char (ord)
+import Data.Int (Int64)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import InputIr (ImplementationMapEntry)
@@ -40,7 +41,7 @@ data AssemblyStatement
   | Lea Address TwacR.Register
   | Load Address TwacR.Register
   | LoadByte Address TwacR.Register
-  | LoadConst Int TwacR.Register
+  | LoadConst Int64 TwacR.Register
   | Transfer TwacR.Register TwacR.Register
   | TransferConst Int TwacR.Register
   | Push TwacR.Register
@@ -415,7 +416,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                 ]
           Twac.IntConstant i dst -> do
             (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (Type "Int") dst
-            pure $ instOnly $ construction ++ [LoadConst i r1, Store r1 (attributeAddress dst 0)]
+            pure $ instOnly $ construction ++ [LoadConst (fromIntegral i) r1, Store r1 (attributeAddress dst 0)]
           Twac.BoolConstant b dst -> do
             (construction, _) <- generateAssemblyStatements' $ TwacRStatement $ Twac.New (Type "Bool") dst
             pure $ instOnly $ construction ++ [LoadConst (if b then 1 else 0) r1, Store r1 (attributeAddress dst 0)]
@@ -598,7 +599,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
           Twac.Abort line reason ->
             let normalAbort messageName =
                   [ LoadLabel (Label messageName) TwacR.Rdi,
-                    LoadConst line TwacR.Rsi,
+                    LoadConst (fromIntegral line) TwacR.Rsi,
                     Call $ Label "printf",
                     LoadConst 1 TwacR.Rdi,
                     Call $ Label "exit"
@@ -610,7 +611,7 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
                       TracIr.CaseOnVoid -> normalAbort "case_on_void"
                       TracIr.CaseNoMatch typeName ->
                         [ LoadLabel (Label "case_no_match") TwacR.Rdi,
-                          LoadConst line TwacR.Rsi,
+                          LoadConst (fromIntegral line) TwacR.Rsi,
                           Load (attributeAddress typeName 0) TwacR.Rdx,
                           Call $ Label "printf",
                           LoadConst 1 TwacR.Rdi,
@@ -641,8 +642,8 @@ generateAssemblyStatements selfType registerParamCount typeDetailsMap twacRState
 -- happy.
 calloc :: Int -> Int -> [AssemblyStatement]
 calloc a b =
-  [ LoadConst a TwacR.Rdi,
-    LoadConst b TwacR.Rsi,
+  [ LoadConst (fromIntegral $ a) TwacR.Rdi,
+    LoadConst (fromIntegral $ b) TwacR.Rsi,
     Call $ Label "calloc"
   ]
 
@@ -833,29 +834,29 @@ outString =
           -- debugging purposes, we never actually jump to it. we save the read char in %r14 while we are printing '\\'.
           AssemblyLabel outBackslashChar,
           Transfer TwacR.Rdi TwacR.R14,
-          LoadConst (ord '\\') TwacR.Rdi,
+          LoadConst (fromIntegral $ ord '\\') TwacR.Rdi,
           putChar,
           Transfer TwacR.R14 TwacR.Rdi,
           putChar,
           Jump loop,
           -- out_newline.
           AssemblyLabel outNewline,
-          LoadConst (ord '\n') TwacR.Rdi,
+          LoadConst (fromIntegral $ ord '\n') TwacR.Rdi,
           putChar,
           Jump loop,
           -- out_tab.
           AssemblyLabel outTab,
-          LoadConst (ord '\t') TwacR.Rdi,
+          LoadConst (fromIntegral $ ord '\t') TwacR.Rdi,
           putChar,
           Jump loop,
           -- out_bs_repeat.
           AssemblyLabel outBackslashRepeat,
-          LoadConst (ord '\\') TwacR.Rdi,
+          LoadConst (fromIntegral $ ord '\\') TwacR.Rdi,
           putChar,
           Jump backslash,
           -- out_bs. Same idea with the fallthrough as out_char.
           AssemblyLabel outBackslashEnd,
-          LoadConst (ord '\\') TwacR.Rdi,
+          LoadConst (fromIntegral $ ord '\\') TwacR.Rdi,
           putChar,
           -- end. we exit. there is intentional fall through here
           AssemblyLabel end,

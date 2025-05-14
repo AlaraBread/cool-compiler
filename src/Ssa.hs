@@ -5,8 +5,9 @@
 module Ssa where
 
 import Cfg (Cfg (..))
-import Control.Monad (foldM)
+import Control.Monad (foldM, unless)
 import Control.Monad.State
+import Data.Bifunctor (Bifunctor (bimap))
 import Data.Foldable (Foldable (foldl'), find)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe, isJust)
@@ -362,3 +363,15 @@ dfs' edges (current : rest) visited =
         : Set.toList new
         ++ dfs' edges (rest ++ new') visited'
 dfs' _ [] _ = []
+
+-- put here to avoid circular dependencies :)
+type AiState a = State (Map.Map SsaVariable a, Set.Set SsaVariable)
+
+-- only actually put a vairable onto the worklist if it changes
+aiSet :: (Eq a) => SsaVariable -> a -> AiState a ()
+aiSet var value = do
+  (state, affected) <- get
+  unless (state Map.! var == value) $ modify $ bimap (Map.insert var value) (Set.insert var)
+
+aiLookup :: SsaVariable -> AiState a a
+aiLookup var = gets ((Map.! var) . fst)

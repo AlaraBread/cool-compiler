@@ -176,6 +176,8 @@
 
 9 pointer tagging
 =================
+void:
+00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
 pointers:
 00000000 00000000 xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx
 ints:

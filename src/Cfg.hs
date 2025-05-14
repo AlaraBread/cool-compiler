@@ -151,15 +151,16 @@ constructCfg' getStatementType (Cfg startLabel blocks children predecessors vari
           ( Set.fromList childList
               <> fromMaybe Set.empty (Map.lookup currentLabel children)
           )
-      blocks' =
+      insertIntoBlock label =
         Map.insert
-          currentLabel
+          label
           ( fromMaybe
               []
-              (Map.lookup currentLabel blocks)
+              (Map.lookup label blocks)
               ++ [statement]
           )
           blocks
+      blocks' = insertIntoBlock currentLabel
       insertIntoPredecessors parent childList p =
         foldl
           ( \m child ->
@@ -181,24 +182,12 @@ constructCfg' getStatementType (Cfg startLabel blocks children predecessors vari
    in case state of
         Skipping -> case getStatementType statement' of
           LabelStatement label ->
-            ( Cfg
-                startLabel
-                blocks'
-                children
-                predecessors
-                variables
-                variablesDefined,
+            ( Cfg startLabel (insertIntoBlock label) children predecessors variables variablesDefined,
               label,
               if currentLabel == label then Skipping else Constructing
             )
           _ ->
-            ( Cfg
-                startLabel
-                blocks'
-                children
-                predecessors
-                variables
-                variablesDefined,
+            ( Cfg startLabel blocks children predecessors variables variablesDefined,
               currentLabel,
               Skipping
             )
@@ -250,7 +239,7 @@ constructCfg' getStatementType (Cfg startLabel blocks children predecessors vari
               else
                 ( Cfg
                     startLabel
-                    blocks'
+                    (insertIntoBlock label)
                     (insertIntoChildren currentLabel [label] children)
                     (insertIntoPredecessors currentLabel [label] predecessors)
                     variables

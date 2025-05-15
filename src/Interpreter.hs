@@ -6,8 +6,6 @@
 
 module Interpreter where
 
-import Control.Exception (evaluate)
-import Control.Monad (when)
 import Control.Monad.State
 import Data.Foldable (find, traverse_)
 import Data.Int (Int32)
@@ -43,7 +41,7 @@ data Object
   | VoidObject
   deriving (Show)
 
-type Location = Int
+type Location = Integer
 
 type Store = (Map.Map Location Object, Location)
 
@@ -199,11 +197,11 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
           runExpr' $ if predicate'' then trueBody else falseBody
         While predicate body -> do
           BoolObject predicate' <- runExpr'' predicate
-          when predicate' $ do
-            _ <- runExpr' body
-            _ <- runExpr' $ Typed staticType (Lined lineNumber (While predicate body))
-            pure ()
-          putInStore VoidObject
+          if predicate'
+            then do
+              _ <- runExpr' body
+              runExpr' $ Typed staticType (Lined lineNumber (While predicate body))
+            else putInStore VoidObject
         Block body -> do
           body' <- traverse runExpr' body
           pure $ last body'

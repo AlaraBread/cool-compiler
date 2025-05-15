@@ -97,7 +97,7 @@ transferFunction' statement = case statement of
 
     case src1' of
       ConstantInt src1'' -> case src2' of
-        ConstantInt src2'' -> unless (src2'' == 0) $ aiSet dst $ ConstantInt $ src1'' `div` src2''
+        ConstantInt src2'' -> unless (src2'' == 0) $ aiSet dst $ ConstantInt $ divTruncateTowardsZero src1'' src2''
         _ -> pure ()
       _ -> pure ()
   -- TODO: you can compare other things...

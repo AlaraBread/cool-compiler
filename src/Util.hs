@@ -4,6 +4,7 @@ module Util where
 
 import Control.Monad.State (MonadState (state), State)
 import Data.Foldable (foldl')
+import Data.Int (Int32)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
@@ -79,3 +80,9 @@ type TypeDetailsMap = Map.Map Type TypeDetails
 -- Type size is in words.
 data TypeDetails = TypeDetails {typeTag :: Int, typeSize :: Int, methodTags :: Map.Map String Int}
   deriving (Show)
+
+-- div truncates towards negative infinity; this does not match cool semantics.
+divTruncateTowardsZero :: Int32 -> Int32 -> Int32
+divTruncateTowardsZero num den
+  | signum num == signum den = div (abs num) (abs den)
+  | otherwise = -(div (abs num) (abs den))

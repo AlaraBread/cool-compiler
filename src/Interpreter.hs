@@ -14,7 +14,7 @@ import Data.Int (Int32)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe)
 import InputIr (Attribute (Attribute), CaseElement (CaseElement), ClassMap, Expr, ExprWithoutLine (..), Formal (formalName), Identifier (Identifier, lexeme), ImplementationMap, ImplementationMapEntry (..), InputIr (InputIr), Internal (..), LetBinding (..), Method (Method, methodBody, methodFormals, methodName), ParentMap, Typed (Typed), implementationMapEntryName)
-import Util (Lined (Lined), Type (Type))
+import Util
 
 resolveImplementationMap :: ImplementationMap -> ImplementationMapEntry Method -> Method
 resolveImplementationMap implementationMap entry = case entry of
@@ -265,7 +265,7 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
           IntObject b' <- runExpr'' b
           if b' == 0
             then runtimeError lineNumber "division by zero"
-            else putInStore $ IntObject $ div a' b'
+            else putInStore $ IntObject $ divTruncateTowardsZero a' b'
         LessThan a b -> do
           a' <- runExpr'' a
           b' <- runExpr'' b

@@ -1,8 +1,8 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
 -- This is just /really/ fancy constant folding. I [ abi ] explicitly asked the
--- professor if "run the program at compile time" is a valid optimization, and
--- he said yes so :3.
+-- professor if "run the program at compile time" is a reasonable optimization,
+-- and he said yes, so, here we are :3.
 
 module Interpreter where
 
@@ -11,7 +11,7 @@ import Control.Monad (when)
 import Control.Monad.State
 import Data.Foldable (find, traverse_)
 import Data.Int (Int32)
-import qualified Data.Map as Map
+import qualified Data.Map.Strict as Map
 import Data.Maybe (fromJust, fromMaybe)
 import InputIr (Attribute (Attribute), CaseElement (CaseElement), ClassMap, Expr, ExprWithoutLine (..), Formal (formalName), Identifier (Identifier, lexeme), ImplementationMap, ImplementationMapEntry (..), InputIr (InputIr), Internal (..), LetBinding (..), Method (Method, methodBody, methodFormals, methodName), ParentMap, Typed (Typed), implementationMapEntryName)
 import Util
@@ -34,7 +34,13 @@ lookupImplementationMap implementationMap typeName name =
             implementationMap Map.! Type typeName
    in resolveImplementationMap implementationMap entry
 
-data Object = Object Type (Map.Map String Location) | IntObject Int32 | BoolObject Bool | StringObject String | VoidObject
+data Object
+  = Object !Type !(Map.Map String Location)
+  | IntObject !Int32
+  | BoolObject !Bool
+  | StringObject !String
+  | VoidObject
+  deriving (Show)
 
 type Location = Int
 
@@ -237,13 +243,15 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
           objectLoc <- putInStore $ Object t0 (Map.fromList $ map (\(loc, name, _) -> (name, loc)) attrs')
           traverse_
             ( \(location, _, initializer) -> do
-                (a, (store, b), c, d) <- get
+                (_, (store, b), _, _) <- get
                 store' <- case initializer of
                   Just initializer' -> do
                     v <- runExpr classMap implementationMap parentMap objectLoc initializer'
                     v' <- lookupLocation v
                     pure $ Map.insert location v' store
                   Nothing -> pure store
+                -- make sure we do not override things from initializers
+                (a, (_, b), c, d) <- get
                 put (a, (store', b), c, d)
             )
             attrs'
@@ -338,7 +346,7 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
             else do
               (environment, (_, _), _, _) <- get
               let Object _ attrEnv = self
-              pure $ fromMaybe (attrEnv Map.! v) $ Map.lookup v environment
+              pure $ Map.findWithDefault (error "variable lookup failed? uh oh.") v (Map.union environment attrEnv)
         Assign lhs rhs -> do
           rhs' <- runExpr' rhs
           assign self lhs rhs'
@@ -372,8 +380,13 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
             put (a, b, c, output ++ outString x)
             pure selfLoc
           ObjectAbort -> abort
-          ObjectCopy -> let Object t attrs = self in putInStore $ Object t attrs
-          ObjectTypeName -> let Object (Type t) _ = self in putInStore $ StringObject t
+          ObjectCopy -> putInStore self
+          ObjectTypeName -> case self of
+            Object (Type t) _ -> putInStore $ StringObject t
+            IntObject _ -> putInStore $ StringObject "Int"
+            BoolObject _ -> putInStore $ StringObject "Bool"
+            StringObject _ -> putInStore $ StringObject "String"
+            VoidObject -> runtimeError lineNumber "this /should/ be impossible..."
           StringConcat -> do
             StringObject s <- lookupVariable "s"
             let StringObject self' = self

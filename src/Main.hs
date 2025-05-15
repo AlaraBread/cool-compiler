@@ -51,9 +51,9 @@ main = do
         Just res ->
           writeFile
             (outputFile inputFile)
-            ( ".section .note.GNU-stack, \"\", @progbits\n\n.section .data\ncomputed: .string \""
+            ( ".section .note.GNU-stack, \"\", @progbits\n\n.section .data\nformat: .string \"%s\"\ncomputed: .string \""
                 ++ sanitizeString res
-                ++ "\"\n.section .text\n.globl main\nmain:\nsubq $8, %rsp\nleaq computed, %rdi\ncall printf\naddq $8, %rsp\nret\n"
+                ++ "\"\n.section .text\n.globl main\nmain:\nsubq $8, %rsp\nleaq computed, %rsi\nleaq format, %rdi\ncall printf\naddq $8, %rsp\nret\n"
             )
             *> pure True
         Nothing -> pure False

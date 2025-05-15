@@ -21,7 +21,7 @@ type ImplementationMap = Map.Map Type [ImplementationMapEntry Method]
 
 -- If the entry is local, we just need the method itself. If it is from a parent, we only want to know what its name is.
 data ImplementationMapEntry m = LocalImpl !m | ParentImpl !Type !String
-  deriving (Show)
+  deriving (Show, Eq)
 
 instance Functor ImplementationMapEntry where
   fmap f (LocalImpl m) = LocalImpl $ f m
@@ -70,7 +70,7 @@ data Method = Method {methodName :: !Identifier, methodFormals :: ![Formal], met
 -- Represents a formal parameter. Lifted directly from the documentation. Note
 -- that in the implementation map, Formals do not have a type. For some reason.
 data Formal = Formal {formalName :: !Identifier, formalType :: !(Maybe Type)}
-  deriving (Show)
+  deriving (Show, Eq)
 
 -- Wraps an ExprWithoutLine with a line number. This way, we can treat line
 -- numbers uniformly among all expression types (and avoid repetition).
@@ -143,7 +143,7 @@ data Identifier = Identifier
   { line :: !Int,
     lexeme :: !String
   }
-  deriving (Show)
+  deriving (Show, Eq)
 
 -- Utility functions
 

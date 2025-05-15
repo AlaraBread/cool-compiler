@@ -4,17 +4,16 @@
 
 module Ssa where
 
-import Cfg (Cfg (..))
+import Cfg (Cfg (..), CfgIr (CfgIr))
 import Control.Monad (foldM, forM, unless)
 import Control.Monad.State
 import Data.Bifunctor (Bifunctor (bimap, first, second))
 import Data.Foldable (foldl', traverse_)
 import Data.List (minimumBy)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust)
+import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, mapMaybe)
 import qualified Data.Set as Set
 import qualified Data.Traversable as Set
-import Debug.Trace (trace, traceM, traceShow, traceShowId, traceShowM, traceStack)
 import GHC.Base (compareInt)
 import TracIr (AbortReason (..), TracStatement (..))
 import Util (Label, Lined (Lined), Variable, reverseMap)
@@ -35,13 +34,13 @@ generateSsa cfg =
           (Map.map (const Set.empty) cfgBlocks)
       domTree' = Map.insert cfgStart (Set.delete cfgStart (domTree Map.! cfgStart)) domTree
       blocks = Map.keys cfgBlocks
-      variables = traceShowId $ Map.unionWith Set.union cfgDefinitions cfgVariables
-      revVariables = traceShowId $ reverseMap variables
+      variables = Map.unionWith Set.union cfgDefinitions cfgVariables
+      revVariables = reverseMap variables
 
       phiFunctions =
         Map.fromList $
           map
-            (\block -> (block, calculatePhiFunctionsForBlock revVariables (variables Map.! (traceShowId block)) (Map.findWithDefault Set.empty block $ reverseMap domFrontiers)))
+            (\block -> (block, calculatePhiFunctionsForBlock revVariables (variables Map.! block) (Map.findWithDefault Set.empty block domFrontiers)))
             blocks
 
       cfgBlocks' =
@@ -62,11 +61,11 @@ calculatePhiFunctionsForBlock ::
   Set.Set Variable ->
   Set.Set Label ->
   Map.Map Variable (Set.Set Label)
-calculatePhiFunctionsForBlock revVariables usedVariables revDomFrontier =
+calculatePhiFunctionsForBlock revVariables usedVariables domFrontier =
+  -- we only need a phi function if we have conflicting definitions
   Map.fromList $
-    filter ((> 1) . Set.size . snd) $ -- we only need a phi function if we have conflicting definitions -- we only need a phi function if we have conflicting definitions -- we only need a phi function if we have conflicting definitions -- we only need a phi function if we have conflicting definitions
-    -- we only need a phi function if we have conflicting definitions
-      map (\var -> (var, trace "arf" (Set.intersection (traceShowId revDomFrontier) $ traceShowId (Map.findWithDefault Set.empty var revVariables)))) $
+    filter ((> 1) . Set.size . snd) $
+      map (\var -> (var, Set.intersection domFrontier (Map.findWithDefault Set.empty var revVariables))) $
         Set.toList usedVariables
 
 fillVariablesWithZero :: Map.Map Label [Lined (TracStatement Variable)] -> Map.Map Label [Lined (TracStatement SsaVariable)]
@@ -408,3 +407,53 @@ aiSet var value = do
 
 aiLookup :: SsaVariable -> AiState a a
 aiLookup var = gets ((Map.! var) . fst)
+
+dropSsaVar :: SsaVariable -> Variable
+dropSsaVar (SsaVariable v _) = v
+
+dropSsaStatement :: Lined (TracStatement SsaVariable) -> Maybe (Lined (TracStatement Variable))
+dropSsaStatement (Lined line statement) =
+  let d = dropSsaVar
+   in Lined line <$> case statement of
+        Add a b c -> Just $ Add (d a) (d b) (d c)
+        Subtract a b c -> Just $ Subtract (d a) (d b) (d c)
+        Multiply a b c -> Just $ Multiply (d a) (d b) (d c)
+        Divide a b c -> Just $ Divide (d a) (d b) (d c)
+        LessThan a b c -> Just $ LessThan (d a) (d b) (d c)
+        LessThanOrEqualTo a b c -> Just $ LessThanOrEqualTo (d a) (d b) (d c)
+        Equals a b c -> Just $ Equals (d a) (d b) (d c)
+        IntConstant a v -> Just $ IntConstant (d a) v
+        BoolConstant a v -> Just $ BoolConstant (d a) v
+        StringConstant a v -> Just $ StringConstant (d a) v
+        Not a b -> Just $ Not (d a) (d b)
+        Negate a b -> Just $ Negate (d a) (d b)
+        New a t -> Just $ New (d a) t
+        Default a t -> Just $ New (d a) t
+        IsVoid a b -> Just $ IsVoid (d a) (d b)
+        Dispatch a b t1 t2 m args -> Just $ Dispatch (d a) (d b) t1 t2 m (fmap d args)
+        Jump l -> Just $ Jump l
+        TracLabel l -> Just $ TracLabel l
+        Return a -> Just $ Return (d a)
+        Comment s -> Just $ Comment s
+        ConditionalJump a l1 l2 -> Just $ ConditionalJump (d a) l1 l2
+        Assign a b -> Just $ Assign (d a) (d b)
+        Case a b ls l -> Just $ Case (d a) (d b) ls l
+        TracInternal internal -> Just $ TracInternal internal
+        Abort line abortReason -> Just $ Abort line $ case abortReason of
+          DispatchOnVoid -> DispatchOnVoid
+          StaticDispatchOnVoid -> StaticDispatchOnVoid
+          CaseOnVoid -> CaseOnVoid
+          CaseNoMatch a -> CaseNoMatch (d a)
+          DivisionByZero -> DivisionByZero
+          SubstringOutOfRange -> SubstringOutOfRange
+        Phi _ _ -> Nothing
+
+dropSsa :: Cfg (TracStatement SsaVariable) SsaVariable -> Cfg (TracStatement Variable) Variable
+dropSsa (Cfg cfgStart cfgBlocks cfgChildren cfgPredecessors cfgVariables cfgDefinitions) =
+  Cfg
+    cfgStart
+    (Map.map (mapMaybe dropSsaStatement) cfgBlocks)
+    cfgChildren
+    cfgPredecessors
+    (Map.map (Set.map dropSsaVar) cfgVariables)
+    (Map.map (Set.map dropSsaVar) cfgDefinitions)

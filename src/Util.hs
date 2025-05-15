@@ -11,6 +11,7 @@ import qualified Data.Set as Set
 
 -- So we can keep track of line numbers.
 data Lined a = Lined {line :: !Int, item :: !a}
+  deriving (Eq)
 
 instance Functor Lined where
   fmap f (Lined line item) = Lined line $ f item
@@ -79,7 +80,7 @@ type TypeDetailsMap = Map.Map Type TypeDetails
 
 -- Type size is in words.
 data TypeDetails = TypeDetails {typeTag :: Int, typeSize :: Int, methodTags :: Map.Map String Int}
-  deriving (Show)
+  deriving (Show, Eq)
 
 -- div truncates towards negative infinity; this does not match cool semantics.
 divTruncateTowardsZero :: Int32 -> Int32 -> Int32

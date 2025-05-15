@@ -5,6 +5,7 @@
 
 module Cfg where
 
+import Data.Foldable (find)
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe, mapMaybe)
@@ -18,10 +19,10 @@ data CfgIr s v = CfgIr
   { implementationMap :: Map.Map Type [InputIr.ImplementationMapEntry (CfgMethod s v)],
     typeDetailsMap :: TypeDetailsMap
   }
-  deriving (Show)
+  deriving (Show, Eq)
 
 data CfgMethod s v = CfgMethod {methodName :: String, body :: Cfg s v, formals :: [InputIr.Formal], temporaryCount :: Int}
-  deriving (Show)
+  deriving (Show, Eq)
 
 createCfgIr :: (Ord v) => TracIr.TracIr v -> CfgIr (TracStatement v) v
 createCfgIr TracIr.TracIr {TracIr.implementationMap, TracIr.typeDetailsMap} =
@@ -94,6 +95,9 @@ data Cfg s v = Cfg
     cfgDefinitions :: Map.Map Label (Set.Set v)
   }
   deriving (Show)
+
+instance (Eq s, Eq v) => Eq (Cfg s v) where
+  (==) (Cfg start blocks children preds vars defs) (Cfg start' blocks' children' preds' vars' defs') = start == start' && blocks == blocks' && children == children' && preds == preds' && vars == vars' && defs == defs'
 
 -- this will reverse all of the edges and also reverse the statements in
 -- cfgBlocks, except for the first statement [ which should be the label ]
@@ -281,31 +285,72 @@ constructCfg' getStatementType (Cfg startLabel blocks children predecessors vari
               Constructing
             )
 
+cfgToLinearCode :: (Ord v) => (TracStatement v -> CfgStatementType v) -> Cfg (TracStatement v) v -> [Lined (TracStatement v)]
+cfgToLinearCode getStatementType = cfgToLinearCode' getStatementType . insertJumps
+
+-- insert jumps where we have blocks with one child
+insertJumps :: (Ord v) => Cfg (TracStatement v) v -> Cfg (TracStatement v) v
+insertJumps (Cfg start blocks children preds vars defs) =
+  let blocks' =
+        Map.mapWithKey
+          ( \label block ->
+              if length (children Map.! label) == 1
+                then block ++ [Lined 0 (Jump $ Set.findMin $ children Map.! label)]
+                else block
+          )
+          blocks
+   in Cfg start blocks children preds vars defs
+
 -- we should probably do something kinder to the branch predictor. oops. at
 -- least the labels are vaguely in the order of the original code?
-cfgToLinearCode :: (s -> CfgStatementType v) -> Cfg s v -> [Lined s]
-cfgToLinearCode getStatementType cfg =
-  -- ensure fallthrough blocks are in correct order
-  let (blocks', _) =
-        foldl
-          ( \(blocks, visited) (block, blockContents) ->
-              if Set.member block visited
-                then (blocks, visited)
-                else
-                  let Lined _ lastStatement = last blockContents
-                   in case getStatementType lastStatement of
-                        ConditionalJumpStatement _ fallthrough ->
-                          ( Map.insert
-                              block
-                              (blockContents ++ (cfgBlocks cfg Map.! fallthrough))
-                              blocks,
-                            Set.fromList [block, fallthrough] <> visited
-                          )
-                        _ -> (Map.insert block blockContents blocks, Set.insert block visited)
-          )
-          (Map.empty, Set.empty)
-          (Map.toList $ cfgBlocks cfg)
-   in concat (Map.elems blocks')
+--
+-- entry point is first because class names are capitalized so Class.method will
+-- be before lN. locked in.
+
+cfgToLinearCode' :: (Ord v) => (s -> CfgStatementType v) -> Cfg s v -> [Lined s]
+cfgToLinearCode' getStatementType (Cfg start blocks children preds vars defs) =
+  let isConditionalJump (ConditionalJumpStatement _ _) = True
+      isConditionalJump _ = False
+
+      getFallthrough (ConditionalJumpStatement _ fallthrough) = fallthrough
+
+      issueBlock = fst <$> find (\(_, block) -> isConditionalJump $ getStatementType $ item $ last block) (Map.toList blocks)
+   in case issueBlock of
+        Just block ->
+          let fallthrough = getFallthrough $ getStatementType $ item $ last $ blocks Map.! block
+              correctedCode = blocks Map.! block ++ blocks Map.! fallthrough
+              blocks' = Map.delete fallthrough $ Map.insert block correctedCode blocks
+           in cfgToLinearCode' getStatementType $ Cfg start blocks' children preds vars defs
+        Nothing -> concat $ Map.elems blocks
+
+-- cfgToLinearCode :: (s -> CfgStatementType v) -> Cfg s v -> [Lined s]
+-- cfgToLinearCode getStatementType cfg =
+--   -- ensure fallthrough blocks are in correct order
+--   let (blocks', _) =
+--         foldl
+--           ( \(blocks, visited) (block, blockContents) ->
+--               if Set.member block visited
+--                 then (blocks, visited)
+--                 else
+--                   let Lined _ lastStatement = last blockContents
+--                    in case getStatementType lastStatement of
+--                         ConditionalJumpStatement _ fallthrough ->
+--                           ( Map.delete fallthrough $
+--                               Map.insert
+--                                 block
+--                                 (blockContents ++ (cfgBlocks cfg Map.! fallthrough))
+--                                 blocks,
+--                             Set.fromList [block, fallthrough] <> visited
+--                           )
+--                         _ -> (Map.insert block blockContents blocks, Set.insert block visited)
+--           )
+--           (Map.empty, Set.empty)
+--           (Map.toList $ cfgBlocks cfg)
+--    in concat (Map.elems blocks')
+
+cfgMethodToLinearCode :: (Ord v) => CfgMethod (TracStatement v) v -> TracIr.TracMethod v
+cfgMethodToLinearCode (CfgMethod methodName body formals temporaryCount) =
+  TracIr.TracMethod methodName (cfgToLinearCode getTracStatementType body) formals temporaryCount
 
 -- neat debugging tool
 cfgToGraphviz :: Cfg s v -> String
@@ -417,3 +462,13 @@ runAi cfg =
 
 removeAnnotations :: AnnotatedCfg s v a -> Cfg s v
 removeAnnotations cfg = cfg {cfgBlocks = Map.map (fmap $ fmap fst) $ cfgBlocks cfg}
+
+-- we will overallocate if we decrease the number of temporaries in
+-- optimization. if we increase have a bad day.
+mapCfgMethod :: (Cfg s1 v1 -> Cfg s2 v2) -> CfgMethod s1 v1 -> CfgMethod s2 v2
+mapCfgMethod f (CfgMethod methodName body formals temporaryCount) =
+  CfgMethod methodName (f body) formals temporaryCount
+
+mapCfgIr :: (Cfg s1 v1 -> Cfg s2 v2) -> CfgIr s1 v1 -> CfgIr s2 v2
+mapCfgIr f (CfgIr implMap typeDetailsMap) =
+  CfgIr (fmap (fmap (fmap (mapCfgMethod f))) implMap) typeDetailsMap

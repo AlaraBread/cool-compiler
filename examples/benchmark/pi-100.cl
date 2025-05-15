@@ -83,7 +83,7 @@ class Main inherits IO {
 
    main() : Object {
       {
-         pi_precision(100); 
+         pi_precision(100);
       }
 
    };

@@ -1,15 +1,18 @@
 module Main where
 
 import Assembly (generateAssembly, sanitizeString)
-import Cfg (CfgIr (CfgIr), CfgMethod (..), cfgToGraphviz, createCfgIr)
+import Cfg (CfgIr (CfgIr), CfgMethod (..), cfgMethodToLinearCode, cfgToGraphviz, cfgToLinearCode, createCfgIr, mapCfgIr, mapCfgMethod)
+import ConstantFolding (constantFold)
 import Control.Monad (unless, when)
 import Data.List (isSuffixOf)
 import Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
+import DeadCodeElimination (deadCodeElimination)
+import Debug.Trace (traceShowM)
 import InputIr
 import InputIrParser
 import Interpreter (interpret)
-import Ssa (generateSsa)
+import Ssa (dropSsa, generateSsa)
 import System.Directory.Internal.Prelude (getArgs)
 import System.Timeout (timeout)
 import Trac
@@ -43,7 +46,7 @@ main = do
   input <- readFile inputFile
   let inputIr = InputIrParser.parse input
 
-  -- we timeout the sanitized string, as that is a concrete "thing" to do that we can actually timeout
+  -- we timeout writing the sanitized string, as that is a concrete "thing" to do that we can actually timeout
   let result = interpret inputIr
   -- True for success, False for failure
   let writeInterpretedResult :: IO Bool
@@ -58,18 +61,10 @@ main = do
             *> pure True
         Nothing -> pure False
 
-  -- this is in µs
-  -- status <- timeout 10000000 writeInterpretedResult
   status <- writeInterpretedResult
 
-  --  let success = case status of
-  --      Just True -> True
-  --      Just False -> False
-  --      Nothing -> False
-  let success = status
-
   -- fine, we'll *actually* compile it, I guess.
-  unless success $ do
+  unless status $ do
     let (InputIr classMap _ parentMap _) = inputIr
     -- this is used by generateTrac to make jump tables for case statements
     let pickLowestParents' = pickLowestParents classMap parentMap
@@ -87,12 +82,29 @@ main = do
     when debug $ print cfgBody
     when debug $ putStrLn $ cfgToGraphviz cfgBody
 
-    when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Ssa Trac: "
-    let ssaCfgBody = generateSsa cfgBody
-    when debug $ print ssaCfgBody
-    when debug $ putStrLn $ cfgToGraphviz ssaCfgBody
+    let ssaCfg = mapCfgIr generateSsa tracCfg
+    let (CfgIr ssaImpMap _) = ssaCfg
+    -- when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Cfg Ssa: "
+    let CfgMethod _ ssaBody _ _ = findMethod' Cfg.methodName ssaImpMap
+    -- when debug $ print ssaBody
+    -- when debug $ putStrLn $ cfgToGraphviz ssaBody
+
+    -- let fix f x =
+    --       if x == f x
+    --         then x
+    --         else fix f (f x)
+    -- let ssaCfgOptimized = mapCfgIr (fix (deadCodeElimination . constantFold)) ssaCfg
+
+    -- -- converting back to boring, straight-line code. personally I prefer
+    -- -- gay-line code but whatever.
+    -- let CfgIr cfgImpMap' cfgTypeDetailsMap' = mapCfgIr dropSsa ssaCfgOptimized
+    -- let tracIr' = TracIr (Map.map (fmap (fmap cfgMethodToLinearCode)) cfgImpMap') cfgTypeDetailsMap'
 
     when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Twac: "
+
+    -- notably we do not use tracIr', i.e. the optimized version. unfortunately,
+    -- our cfg construction is mildly buggy which completely destroys our
+    -- correctness and makes that not worthwhile :<
     let (twacIr, temporaryState') = generateTwac tracIr temporaryState
     let TwacIr twacImpMap _ = twacIr
     let TwacMethod _ twacBody _ _ = findMethod' Twac.methodName twacImpMap

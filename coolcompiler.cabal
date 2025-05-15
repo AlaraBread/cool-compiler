@@ -28,3 +28,4 @@ executable coolcompiler
   other-modules: Ssa
   other-modules: ConstantFolding
   other-modules: DeadCodeElimination
+  other-modules: Interpreter

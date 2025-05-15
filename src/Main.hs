@@ -60,6 +60,7 @@ main = do
 
   -- this is in µs
   status <- timeout 10000000 writeInterpretedResult
+
   let success = case status of
         Just True -> True
         Just False -> False

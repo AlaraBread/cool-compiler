@@ -22,8 +22,9 @@ resolveImplementationMap implementationMap entry = case entry of
   ParentImpl parent name ->
     let LocalImpl m =
           fromJust $
-            find ((name ==) . implementationMapEntryName (lexeme . methodName)) $
-              implementationMap Map.! parent
+            find
+              ((name ==) . implementationMapEntryName (lexeme . methodName))
+              (implementationMap Map.! parent)
      in m
 
 lookupImplementationMap :: ImplementationMap -> String -> String -> Method
@@ -31,7 +32,7 @@ lookupImplementationMap implementationMap typeName name =
   let entry =
         fromJust $
           find ((name ==) . implementationMapEntryName (lexeme . methodName)) $
-            implementationMap Map.! Type typeName
+            (implementationMap Map.! Type typeName)
    in resolveImplementationMap implementationMap entry
 
 data Object
@@ -381,12 +382,7 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
             pure selfLoc
           ObjectAbort -> abort
           ObjectCopy -> putInStore self
-          ObjectTypeName -> case self of
-            Object (Type t) _ -> putInStore $ StringObject t
-            IntObject _ -> putInStore $ StringObject "Int"
-            BoolObject _ -> putInStore $ StringObject "Bool"
-            StringObject _ -> putInStore $ StringObject "String"
-            VoidObject -> runtimeError lineNumber "this /should/ be impossible..."
+          ObjectTypeName -> putInStore $ StringObject $ typeOfObject self
           StringConcat -> do
             StringObject s <- lookupVariable "s"
             let StringObject self' = self

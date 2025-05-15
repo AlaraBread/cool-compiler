@@ -391,20 +391,8 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
         Constructor -> undefined -- wont happen
 
 outString :: String -> String
-outString = outString' False
-
-outString' :: Bool -> String -> String
-outString' backslash (c : remaining) =
-  if backslash
-    then
-      ( case c of
-          '\\' -> "\\"
-          'n' -> "\n"
-          't' -> "\t"
-          _ -> "\\" ++ [c]
-      )
-        ++ outString' False remaining
-    else case c of
-      '\\' -> outString' True remaining
-      _ -> c : outString' False remaining
-outString' backslash [] = if backslash then "\\" else ""
+outString string = case string of
+  '\\' : 'n' : tail -> "\n" ++ outString tail
+  '\\' : 't' : tail -> "\t" ++ outString tail
+  c : tail -> c : outString tail
+  "" -> ""

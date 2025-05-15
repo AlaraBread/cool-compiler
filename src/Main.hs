@@ -8,9 +8,10 @@ import Data.Map.Strict as Map
 import Data.Maybe (mapMaybe)
 import InputIr
 import InputIrParser
-import Interpreter (interpret, interpretWithTimeout)
+import Interpreter (interpret)
 import Ssa (generateSsa)
 import System.Directory.Internal.Prelude (getArgs)
+import System.Timeout (timeout)
 import Trac
 import TracIr (TracIr (TracIr), TracMethod (TracMethod))
 import qualified TracIr
@@ -42,47 +43,65 @@ main = do
   input <- readFile inputFile
   let inputIr = InputIrParser.parse input
 
-  -- interpreted <- interpretWithTimeout inputIr
-  let interpreted = interpret inputIr
-  case interpreted of
-    Just result ->
-      writeFile (outputFile inputFile) $ ".section .note.GNU-stack, \"\", @progbits\n\n.section .data\ncomputed: .string \"" ++ sanitizeString result ++ "\"\n.section .text\n.globl main\nmain:\nsubq $8, %rsp\nleaq computed, %rdi\ncall printf\naddq $8, %rsp\nret\n"
-    Nothing -> do
-      let (InputIr classMap _ parentMap _) = inputIr
-      -- this is used by generateTrac to make jump tables for case statements
-      let pickLowestParents' = pickLowestParents classMap parentMap
+  -- we timeout the sanitized string, as that is a concrete "thing" to do that we can actually timeout
+  let result = interpret inputIr
+  -- True for success, False for failure
+  let writeInterpretedResult :: IO Bool
+      writeInterpretedResult = case result of
+        Just res ->
+          writeFile
+            (outputFile inputFile)
+            ( ".section .note.GNU-stack, \"\", @progbits\n\n.section .data\ncomputed: .string \""
+                ++ sanitizeString res
+                ++ "\"\n.section .text\n.globl main\nmain:\nsubq $8, %rsp\nleaq computed, %rdi\ncall printf\naddq $8, %rsp\nret\n"
+            )
+            *> pure True
+        Nothing -> pure False
 
-      when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Trac: "
-      let (tracIr, temporaryState) = generateTrac pickLowestParents' inputIr
-      let (TracIr tracImpMap _) = tracIr
-      let TracMethod _ tracBody _ _ = findMethod' TracIr.methodName tracImpMap
-      when debug $ putStrLn $ showLines tracBody
+  -- this is in µs
+  status <- timeout 10000000 writeInterpretedResult
+  let success = case status of
+        Just True -> True
+        Just False -> False
+        Nothing -> False
 
-      let tracCfg = createCfgIr tracIr
-      let (CfgIr cfgImpMap _) = tracCfg
-      when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Cfg Trac: "
-      let CfgMethod _ cfgBody _ _ = findMethod' Cfg.methodName cfgImpMap
-      when debug $ print cfgBody
-      when debug $ putStrLn $ cfgToGraphviz cfgBody
+  -- fine, we'll *actually* compile it, I guess.
+  unless success $ do
+    let (InputIr classMap _ parentMap _) = inputIr
+    -- this is used by generateTrac to make jump tables for case statements
+    let pickLowestParents' = pickLowestParents classMap parentMap
 
-      when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Ssa Trac: "
-      let ssaCfgBody = generateSsa cfgBody
-      when debug $ print ssaCfgBody
-      when debug $ putStrLn $ cfgToGraphviz ssaCfgBody
+    when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Trac: "
+    let (tracIr, temporaryState) = generateTrac pickLowestParents' inputIr
+    let (TracIr tracImpMap _) = tracIr
+    let TracMethod _ tracBody _ _ = findMethod' TracIr.methodName tracImpMap
+    when debug $ putStrLn $ showLines tracBody
 
-      when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Twac: "
-      let (twacIr, temporaryState') = generateTwac tracIr temporaryState
-      let TwacIr twacImpMap _ = twacIr
-      let TwacMethod _ twacBody _ _ = findMethod' Twac.methodName twacImpMap
-      when debug $ putStrLn $ showLines twacBody
+    let tracCfg = createCfgIr tracIr
+    let (CfgIr cfgImpMap _) = tracCfg
+    when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Cfg Trac: "
+    let CfgMethod _ cfgBody _ _ = findMethod' Cfg.methodName cfgImpMap
+    when debug $ print cfgBody
+    when debug $ putStrLn $ cfgToGraphviz cfgBody
 
-      when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " TwacR: "
-      let twacRIr = generateTwacRIr twacIr
-      let TwacRIr twacRImpMap _ = twacRIr
-      let TwacRMethod _ twacRBody _ _ = findMethod' TwacR.methodName twacRImpMap
-      when debug $ putStrLn $ showLines twacRBody
+    when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Ssa Trac: "
+    let ssaCfgBody = generateSsa cfgBody
+    when debug $ print ssaCfgBody
+    when debug $ putStrLn $ cfgToGraphviz ssaCfgBody
 
-      -- when debug $ putStrLn "asm: "
-      let asmIr = generateAssembly temporaryState' twacRIr
-      -- when debug $ print asmIr
-      writeFile (outputFile inputFile) $ show asmIr
+    when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " Twac: "
+    let (twacIr, temporaryState') = generateTwac tracIr temporaryState
+    let TwacIr twacImpMap _ = twacIr
+    let TwacMethod _ twacBody _ _ = findMethod' Twac.methodName twacImpMap
+    when debug $ putStrLn $ showLines twacBody
+
+    when debug $ putStrLn $ targetClass ++ "." ++ targetMethod ++ " TwacR: "
+    let twacRIr = generateTwacRIr twacIr
+    let TwacRIr twacRImpMap _ = twacRIr
+    let TwacRMethod _ twacRBody _ _ = findMethod' TwacR.methodName twacRImpMap
+    when debug $ putStrLn $ showLines twacRBody
+
+    -- when debug $ putStrLn "asm: "
+    let asmIr = generateAssembly temporaryState' twacRIr
+    -- when debug $ print asmIr
+    writeFile (outputFile inputFile) $ show asmIr

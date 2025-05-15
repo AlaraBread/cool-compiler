@@ -1,7 +1,12 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
+-- This is just /really/ fancy constant folding. I [ abi ] explicitly asked the
+-- professor if "run the program at compile time" is a valid optimization, and
+-- he said yes so :3.
+
 module Interpreter where
 
+import Control.Exception (evaluate)
 import Control.Monad (when)
 import Control.Monad.State
 import Data.Foldable (find, traverse_)
@@ -9,7 +14,6 @@ import Data.Int (Int32)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe)
 import InputIr (Attribute (Attribute), CaseElement (CaseElement), ClassMap, Expr, ExprWithoutLine (..), Formal (formalName), Identifier (Identifier, lexeme), ImplementationMap, ImplementationMapEntry (..), InputIr (InputIr), Internal (..), LetBinding (..), Method (Method, methodBody, methodFormals, methodName), ParentMap, Typed (Typed), implementationMapEntryName)
-import System.Timeout (timeout)
 import Util (Lined (Lined), Type (Type))
 
 resolveImplementationMap :: ImplementationMap -> ImplementationMapEntry Method -> Method
@@ -59,15 +63,6 @@ runtimeError lineNumber msg = do
   (a, b, c, output) <- get
   put (a, b, c, output ++ "ERROR: " ++ show lineNumber ++ ": Exception: " ++ msg ++ "\\n")
   fail ""
-
-interpretWithTimeout :: InputIr -> IO (Maybe String)
-interpretWithTimeout inputIr = do
-  result <- timeout 1000000 $ pure $ interpret inputIr
-  case result of
-    Just result' -> case result' of
-      Just result'' -> pure $ Just result''
-      Nothing -> pure Nothing
-    Nothing -> pure Nothing
 
 interpret :: InputIr -> Maybe String
 interpret (InputIr classMap implementationMap parentMap _) =
@@ -269,8 +264,7 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
           IntObject a' <- runExpr'' a
           IntObject b' <- runExpr'' b
           if b' == 0
-            then
-              runtimeError lineNumber "division by zero"
+            then runtimeError lineNumber "division by zero"
             else putInStore $ IntObject $ div a' b'
         LessThan a b -> do
           a' <- runExpr'' a
@@ -393,8 +387,7 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
             let l' = fromIntegral l
             if i' < 0 || i' >= length self' || i' + l' > length self' || l' < 0
               then runtimeError lineNumber "String.substr out of range"
-              else
-                putInStore $ StringObject $ drop i' (take (i' + l') self')
+              else putInStore $ StringObject $ drop i' (take (i' + l') self')
         Constructor -> undefined -- wont happen
 
 outString :: String -> String

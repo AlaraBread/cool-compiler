@@ -11,6 +11,7 @@ import Data.Foldable (find, traverse_)
 import Data.Int (Int32)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromJust, fromMaybe)
+import Debug.Trace (trace)
 import InputIr (Attribute (Attribute), CaseElement (CaseElement), ClassMap, Expr, ExprWithoutLine (..), Formal (formalName), Identifier (Identifier, lexeme), ImplementationMap, ImplementationMapEntry (..), InputIr (InputIr), Internal (..), LetBinding (..), Method (Method, methodBody, methodFormals, methodName), ParentMap, Typed (Typed), implementationMapEntryName)
 import Util
 
@@ -96,10 +97,21 @@ lookupLocation loc = do
   (_, (store, _), _, _) <- get
   pure $ store Map.! loc
 
-lookupVariable :: String -> InterpreterState Object
-lookupVariable name = do
-  (env, _, _, _) <- get
-  lookupLocation $ env Map.! name
+lookupVariable :: Location -> String -> InterpreterState Location
+lookupVariable selfLoc name = do
+  self <- lookupLocation selfLoc
+  let Object _ attrEnv = self
+  if name == "self"
+    then pure selfLoc
+    else do
+      (environment, (_, _), _, _) <- get
+      let Object _ attrEnv = self
+      pure $ Map.findWithDefault (error "variable lookup failed? uh oh.") name (Map.union environment attrEnv)
+
+lookupVariableInEnv :: String -> InterpreterState Location
+lookupVariableInEnv name = do
+  (environment, (_, _), _, _) <- get
+  pure $ Map.findWithDefault (error "variable lookup failed? uh oh.") name environment
 
 newloc :: InterpreterState Location
 newloc = do
@@ -114,6 +126,13 @@ putInStore obj = do
   let store' = Map.insert loc obj store
   put (a, (store', b), c, d)
   pure loc
+
+putInStoreAt :: Object -> Location -> InterpreterState ()
+putInStoreAt obj loc = do
+  (a, (store, b), c, d) <- get
+  let store' = Map.insert loc obj store
+  put (a, (store', b), c, d)
+  pure ()
 
 putInEnv :: String -> Location -> InterpreterState ()
 putInEnv ident loc = do
@@ -135,7 +154,7 @@ typeOfObject obj = case obj of
   IntObject _ -> "Int"
   BoolObject _ -> "Bool"
   StringObject _ -> "String"
-  VoidObject -> undefined
+  VoidObject -> trace "typeof void" $ error "typeof void"
 
 runMethod :: ClassMap -> ImplementationMap -> ParentMap -> Location -> Method -> InterpreterState Location
 runMethod classMap implementationMap parentMap self (Method {methodBody}) = runExpr classMap implementationMap parentMap self methodBody
@@ -143,7 +162,11 @@ runMethod classMap implementationMap parentMap self (Method {methodBody}) = runE
 runExpr :: ClassMap -> ImplementationMap -> ParentMap -> Location -> Typed Expr -> InterpreterState Location
 runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined lineNumber expr)) = do
   self <- lookupLocation selfLoc
-  let runExpr' = runExpr classMap implementationMap parentMap selfLoc
+  let lookupVariable' = lookupVariable selfLoc
+      lookupVariableInEnv' n = do
+        l <- lookupVariableInEnv n
+        lookupLocation l
+      runExpr' = runExpr classMap implementationMap parentMap selfLoc
       runExpr'' e = do
         e' <- runExpr' e
         lookupLocation e'
@@ -241,17 +264,16 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
               attrs
           objectLoc <- putInStore $ Object t0 (Map.fromList $ map (\(loc, name, _) -> (name, loc)) attrs')
           traverse_
-            ( \(location, _, initializer) -> do
-                (_, (store, b), _, _) <- get
-                store' <- case initializer of
+            ( \(_, name, initializer) ->
+                case initializer of
                   Just initializer' -> do
                     v <- runExpr classMap implementationMap parentMap objectLoc initializer'
-                    v' <- lookupLocation v
-                    pure $ Map.insert location v' store
-                  Nothing -> pure store
-                -- make sure we do not override things from initializers
-                (a, (_, b), c, d) <- get
-                put (a, (store', b), c, d)
+                    Object t attrEnv <- lookupLocation objectLoc
+                    let attrEnv' = Map.insert name v attrEnv
+                    putInStoreAt (Object t attrEnv') objectLoc
+                    pure ()
+                  Nothing -> pure ()
+                  -- make sure we do not override things from initializers
             )
             attrs'
           pure objectLoc
@@ -339,13 +361,7 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
         IntegerConstant i -> putInStore $ IntObject i
         StringConstant s -> putInStore $ StringObject s
         BooleanConstant b -> putInStore $ BoolObject b
-        Variable (Identifier _ v) ->
-          if v == "self"
-            then pure selfLoc
-            else do
-              (environment, (_, _), _, _) <- get
-              let Object _ attrEnv = self
-              pure $ Map.findWithDefault (error "variable lookup failed? uh oh.") v (Map.union environment attrEnv)
+        Variable (Identifier _ v) -> lookupVariable' v
         Assign lhs rhs -> do
           rhs' <- runExpr' rhs
           assign self lhs rhs'
@@ -364,17 +380,16 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
           (_, b, c, d) <- get
           put (oldEnvironment, b, c, d)
           pure body'
-        -- COOL internal expressions -> undefined
         InputInternal internal -> case internal of
           IOInInt -> requireInput
           IOInString -> requireInput
           IOOutInt -> do
-            IntObject x <- lookupVariable "x"
+            IntObject x <- lookupVariableInEnv' "x"
             (a, b, c, output) <- get
             put (a, b, c, output ++ show x)
             pure selfLoc
           IOOutString -> do
-            StringObject x <- lookupVariable "x"
+            StringObject x <- lookupVariableInEnv' "x"
             (a, b, c, output) <- get
             put (a, b, c, output ++ outString x)
             pure selfLoc
@@ -382,20 +397,20 @@ runExpr classMap implementationMap parentMap selfLoc (Typed staticType (Lined li
           ObjectCopy -> putInStore self
           ObjectTypeName -> putInStore $ StringObject $ typeOfObject self
           StringConcat -> do
-            StringObject s <- lookupVariable "s"
+            StringObject s <- lookupVariableInEnv' "s"
             let StringObject self' = self
             putInStore $ StringObject $ self' ++ s
           StringLength -> let StringObject self' = self in putInStore $ IntObject $ fromIntegral $ length self'
           StringSubstr -> do
             let StringObject self' = self
-            IntObject i <- lookupVariable "i"
-            IntObject l <- lookupVariable "l"
+            IntObject i <- lookupVariableInEnv' "i"
+            IntObject l <- lookupVariableInEnv' "l"
             let i' = fromIntegral i
             let l' = fromIntegral l
             if i' < 0 || i' >= length self' || i' + l' > length self' || l' < 0
               then runtimeError lineNumber "String.substr out of range"
               else putInStore $ StringObject $ drop i' (take (i' + l') self')
-        Constructor -> undefined -- wont happen
+        Constructor -> trace "constructor expr" $ error "constructor expression" -- wont happen
 
 outString :: String -> String
 outString string = case string of

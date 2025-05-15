@@ -59,12 +59,14 @@ main = do
         Nothing -> pure False
 
   -- this is in µs
-  status <- timeout 10000000 writeInterpretedResult
+  -- status <- timeout 10000000 writeInterpretedResult
+  status <- writeInterpretedResult
 
-  let success = case status of
-        Just True -> True
-        Just False -> False
-        Nothing -> False
+  --  let success = case status of
+  --      Just True -> True
+  --      Just False -> False
+  --      Nothing -> False
+  let success = status
 
   -- fine, we'll *actually* compile it, I guess.
   unless success $ do

@@ -17,3 +17,5 @@ We initially intended to do proper register allocation, but we ran out of time.
 We run (dead code elimination, constant folding) until fixpoint.
 
 We also have an interpreter that runs over the InputIr. If it terminates within 10 seconds and doesn't require input, then we "constant fold" the whole program to a single printf.
+
+Benchmark 2 is julia's rosetta, but with a test case inserted into it as constants.

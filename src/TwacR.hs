@@ -268,7 +268,7 @@ generateTwacRStatements epilogue freeRegisters twac =
         TwacInternal internal -> [TwacRStatement $ TwacInternal internal]
 
 generateTwacR :: TwacR -> Twac Variable -> TwacR
-generateTwacR epilogue = concatMap (unsequence . fmap (generateTwacRStatements epilogue freeRegisters))
+generateTwacR epilogue = concatMap (traverse (generateTwacRStatements epilogue freeRegisters))
 
 generateTwacRMethod :: Type -> TwacMethod Variable -> TwacRMethod
 generateTwacRMethod (Type typeName) (TwacMethod name body formals temporaryCount) =

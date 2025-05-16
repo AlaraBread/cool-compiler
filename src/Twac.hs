@@ -135,7 +135,7 @@ generateTwacStatement tracStatement = case tracStatement of
 -- iterating away type errors.
 tracToTwac :: TracIr.Trac v -> State Temporary (Twac v)
 tracToTwac trac =
-  concatMap unsequence <$> mapM (mapM generateTwacStatement) trac
+  concatMap sequenceA <$> mapM (mapM generateTwacStatement) trac
 
 generateTwacMethod :: TracIr.TracMethod Variable -> State Temporary (TwacMethod Variable)
 generateTwacMethod (TracIr.TracMethod methodName body formals temporaryCount) = do
